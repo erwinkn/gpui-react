@@ -2683,6 +2683,35 @@ pub struct WebGpuixRenderer {
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 #[wasm_bindgen::prelude::wasm_bindgen(js_class = GpuixRenderer)]
 impl WebGpuixRenderer {
+    /// Register fonts before the first layout, including while graphics initializes.
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = registerFonts)]
+    pub fn register_fonts(&self, fonts: js_sys::Array) -> Result<(), wasm_bindgen::JsValue> {
+        let fonts = fonts.iter().map(|value| {
+            std::borrow::Cow::Owned(js_sys::Uint8Array::new(&value).to_vec())
+        }).collect();
+        WEB_APP.with(|app| {
+            let app = app.borrow();
+            let app = app.as_ref().ok_or_else(|| wasm_bindgen::JsValue::from_str("GPUIX web is not initialized"))?;
+            app.update(|cx| cx.text_system().add_fonts(fonts))
+                .map_err(|error| wasm_bindgen::JsValue::from_str(&error.to_string()))
+        })
+    }
+
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = measureTextWidths)]
+    pub fn measure_text_widths(&self, family: String, size: f64, weight: f64, texts: Vec<String>) -> Result<wasm_bindgen::JsValue, wasm_bindgen::JsValue> {
+        if !size.is_finite() || size <= 0.0 || !weight.is_finite() || weight <= 0.0 {
+            return Err(wasm_bindgen::JsValue::from_str("Text size and weight must be finite and positive"));
+        }
+        WEB_APP.with(|app| {
+            let app = app.borrow();
+            let app = app.as_ref().ok_or_else(|| wasm_bindgen::JsValue::from_str("GPUIX web is not initialized"))?;
+            Ok(app.update(|cx| {
+                let system = gpui::WindowTextSystem::new(cx.text_system().clone());
+                web_number_array(crate::text_measure::widths_with_system(&system, family, size, weight, texts))
+            }))
+        })
+    }
+
     #[wasm_bindgen::prelude::wasm_bindgen(constructor)]
     pub fn new(event_callback: js_sys::Function) -> Self {
         Self {

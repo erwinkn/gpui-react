@@ -3160,3 +3160,12 @@ Groups are renderer-local and release their handle when their final member leave
 For diagnostics, call `startFrameProfile(keepVisible?)`, send input without forcing automation draws, then parse `takeFrameProfile()`. It returns draw/submission timestamps, native view build times, and mutation batch sizes. It records no text. On macOS, `keepVisible: true` temporarily floats the first native window without pointer input and restores its prior level and input policy when capture ends. A scoped user-initiated activity prevents App Nap during the capture without preventing system sleep. These are CPU submission times, not proof of physical display presentation.
 
 The macOS embedded pump services AppKit once per host tick, with a four-millisecond cooperative event-drain budget. A count-only drain can keep finding new events while display callbacks run. The extra CFRunLoop pass has been removed because `nextEventMatchingMask` already services the run loop. Test-support builds expose `queueAppKitMouseMoves(count, x, y, deltaY)` for in-process AppKit input checks; it does not move the system pointer or send input to another app.
+
+### Browser font registration and measurement
+
+The browser renderer exposes the same `registerFonts(Uint8Array[])` and
+`measureTextWidths(family, size, weight, texts)` methods as the desktop renderer.
+Read the font bytes before mounting the app. Register them before the first text
+layout. The browser methods use the application's text system while graphics
+initialization is in progress; they do not wait for a window or repair layout
+with a timer. Measurement rejects non-finite or non-positive sizes and weights.
