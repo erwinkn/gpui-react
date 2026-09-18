@@ -11,7 +11,7 @@
 /// JSX types now resolve to GPUIX's Props via jsxImportSource in tsconfig.
 
 import fs from "fs"
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import React, { useState, useRef } from "react"
@@ -53,28 +53,54 @@ describe("frame loop", () => {
 
   it.skipIf(process.platform !== "darwin")(
     "returns control to JavaScript while AppKit is idle",
-    () => {
+    async () => {
       const script = [
         'import { GpuixRenderer } from "@gpuix/native"',
         "const renderer = new GpuixRenderer(() => {})",
         "renderer.init({ focus: false })",
         "renderer.tick()",
+        "process.stderr.write('idle-ready\\n')",
         "const startedAt = performance.now()",
         "for (let index = 0; index < 30; index += 1) renderer.tick()",
         "console.log(performance.now() - startedAt)",
         "process.exit(0)",
       ].join("\n")
-      const result = spawnSync(
+      const child = spawn(
         process.execPath,
         ["-e", script],
-        { encoding: "utf8", timeout: 3_000 },
+        { env: { ...process.env, GPUIX_BACKGROUND: "1" } },
       )
-
-      expect(result.status, result.stderr || result.error?.message).toBe(0)
-      const elapsedMs = Number(result.stdout.trim())
+      let stdout = ""
+      let stderr = ""
+      let phase = "startup"
+      let timeoutMessage = ""
+      const expire = () => {
+        timeoutMessage = `${phase} timed out`
+        child.kill("SIGKILL")
+      }
+      // Allow the same startup budget as native host tests. The idle phase keeps
+      // its original watchdog and measured 200 ms limit, independent of startup.
+      let watchdog = setTimeout(expire, 15_000)
+      child.stdout.setEncoding("utf8").on("data", chunk => { stdout += chunk })
+      child.stderr.setEncoding("utf8").on("data", chunk => {
+        stderr += chunk
+        if (phase === "startup" && stderr.includes("idle-ready\n")) {
+          phase = "idle"
+          clearTimeout(watchdog)
+          watchdog = setTimeout(expire, 3_000)
+        }
+      })
+      const status = await new Promise<number | null>((resolve, reject) => {
+        child.on("error", error => { clearTimeout(watchdog); reject(error) })
+        child.on("close", code => { clearTimeout(watchdog); resolve(code) })
+      })
+      expect(status, timeoutMessage || stderr).toBe(0)
+      expect(phase).toBe("idle")
+      const elapsedMs = Number(stdout.trim())
       expect(elapsedMs).not.toBeNaN()
       expect(elapsedMs).toBeLessThan(200)
     },
+    20_000,
   )
 
   it("does not tick when the native platform owns its event loop", () => {
