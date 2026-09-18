@@ -53,8 +53,13 @@ browser backend currently requires a page reload after device loss.
 The Metal headless tests cover transparent blending, float RGB above alpha,
 opacity, clip masks, corner radii, resize, and later scene content. The producer
 uses a GPU clear command on the shared queue. Only the screenshot assertion
-waits for readback. Browser Rust compilation and WGSL validation are separate
-checks; they do not prove browser GPU execution.
+waits for readback.
+
+The [framework composition fixture](../fixtures/native-composition/README.md)
+tests the public extension and loader APIs. Its pixel checks cover opacity, HDR,
+clipping, corners, multiple textures, resize, and removal. It also checks clicks,
+shared text, source workers, and relocated compiled workers. Browser pixel checks
+run in headless Chrome on macOS, with native WebGPU and ANGLE WebGL2.
 
 The upstream [external compositor proposal](https://github.com/zed-industries/zed/pull/60573)
 was closed pending API discussion. This fork extends its existing texture

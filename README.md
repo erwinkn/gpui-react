@@ -610,6 +610,11 @@ re-export and pin the same GPUiX revision in all component crates. JavaScript
 packages cannot add native implementations to an already built runtime. A
 composition can inspect its installed set with `registered_extensions()`.
 
+The [framework composition fixture](./fixtures/native-composition/README.md)
+is a runnable example of this boundary. It tests a general GPU texture element
+through native, worker, and browser bindings. It contains no application
+component or effect shader.
+
 ### Select the application composition
 
 Native extensions can render into a GPU texture and call

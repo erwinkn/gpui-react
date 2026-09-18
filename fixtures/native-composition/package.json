@@ -1,0 +1,23 @@
+{
+  "name": "@gpuix/extension-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:native": "bun build.ts",
+    "build:wasm": "bun build.ts --wasm",
+    "test:native": "bun test.ts && bun test-host.ts",
+    "serve": "bun server.ts",
+    "test:browser": "bun test-browser.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@gpuix/native": "workspace:*",
+    "@gpuix/react": "workspace:*",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "pngjs": "^7.0.0",
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.2.0"
+  }
+}

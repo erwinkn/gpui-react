@@ -6,7 +6,8 @@
     "cli",
     "packages/*",
     "examples",
-    "example-app"
+    "example-app",
+    "fixtures/native-composition"
   ],
   "scripts": {
     "build": "bun run build:native && bun run build:react",
