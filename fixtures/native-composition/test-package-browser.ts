@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 import { PNG } from "pngjs"
+import { waitFor } from "./wait-for"
 
 const artifacts = resolve(process.argv[2] ?? "dist/runtime")
 const manifest = JSON.parse(readFileSync(join(artifacts, "runtime-manifest.json"), "utf8"))
@@ -74,8 +75,7 @@ try {
     for (const backend of ["webgpu", "webgl"]) {
       await browser("open", `${server.url}?entry=${entry}&backend=${backend}`)
       await browser("wait", "--fn", "Boolean(globalThis.packageProbe && globalThis.gpuix)")
-      await browser("wait", "--fn", "(async()=>(await globalThis.gpuix.getByTestId('package-probe').all())[0]?.bounds?.width === 64)()")
-      const { result } = await browser("eval", `(async()=>({info:globalThis.packageProbe, bounds:(await globalThis.gpuix.getByTestId('package-probe').waitFor()).bounds, viewport:innerWidth, canvas:{width:document.querySelector('canvas').width,rect:document.querySelector('canvas').getBoundingClientRect().toJSON()}, resources:performance.getEntriesByType('resource').map(x=>x.name)}))()`)
+      const { result } = await waitFor(() => browser("eval", `(async()=>({info:globalThis.packageProbe, bounds:(await globalThis.gpuix.getByTestId('package-probe').all())[0]?.bounds, viewport:innerWidth, canvas:{width:document.querySelector('canvas').width,rect:document.querySelector('canvas').getBoundingClientRect().toJSON()}, resources:performance.getEntriesByType('resource').map(x=>x.name)}))()`), value => value.result.bounds?.width === 64)
       assert.equal(result.info.extensions.length, entry === "selected" ? 1 : 0)
       assert.equal(result.bounds.width, 64)
       if (entry === "selected") assert(!result.resources.some((url: string) => url.includes("gpuix-web")), "Selected binding fetched default WASM")

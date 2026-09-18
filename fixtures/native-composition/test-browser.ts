@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { PNG } from "pngjs"
+import { waitFor } from "./wait-for"
 
 const base = process.argv[2] ?? "http://127.0.0.1:4187"
 const session = `gpuix-composition-${process.pid}`
@@ -21,14 +22,13 @@ try {
   for (const backend of ["webgpu", "webgl"]) {
     browser(["open", `${base}/?backend=${backend}`])
     browser(["wait", "--fn", "Boolean(globalThis.extensionProbe && globalThis.gpuix)"])
-    browser(["wait", "--fn", "(async()=>(await globalThis.gpuix.getByTestId('texture').all())[0]?.bounds?.width === 64)()"])
-    const geometry = evaluate(`(async()=>({
-      entry: await globalThis.gpuix.getByTestId('texture').waitFor(),
+    const geometry = await waitFor(() => evaluate(`(async()=>({
+      entry: (await globalThis.gpuix.getByTestId('texture').all())[0],
       canvas: {width: document.querySelector('canvas').width, rect: document.querySelector('canvas').getBoundingClientRect().toJSON()},
       viewportWidth: innerWidth,
       info: globalThis.extensionProbe.info,
       defaultRequests: performance.getEntriesByType('resource').filter(entry=>entry.name.includes('/unexpected-default/')).length
-    }))()`)
+    }))()`), value => value.entry?.bounds?.width === 64)
     assert.equal(geometry.defaultRequests, 0)
     assert.equal(geometry.entry.bounds.width, 64)
     assert.deepEqual(geometry.info.extensions.map((item: {id: string}) => item.id), ["gpuix.example"])
@@ -55,12 +55,12 @@ try {
     pixel(image, 96, 24, [0, 255, 0, 255])
     assert.equal(evaluate("(async()=>{await globalThis.gpuix.getByTestId('texture').click();return globalThis.extensionProbe.clicks()})()"), 1)
     evaluate("globalThis.extensionProbe.resize()")
-    browser(["wait", "--fn", "(async()=>(await globalThis.gpuix.getByTestId('texture').all())[0]?.bounds?.width === 32)()"])
+    await waitFor(() => evaluate("(async()=>(await globalThis.gpuix.getByTestId('texture').all())[0]?.bounds?.width)()"), width => width === 32)
     image = screenshot("resized")
     pixel(image, 24, 24, [32, 0, 223, 255])
     pixel(image, 48, 40, [0, 0, 255, 255])
     evaluate("globalThis.extensionProbe.remove()")
-    browser(["wait", "--fn", "(async()=>await globalThis.gpuix.getByTestId('texture').count() === 0)()"])
+    await waitFor(() => evaluate("globalThis.gpuix.getByTestId('texture').count()"), count => count === 0)
     image = screenshot("removed")
     pixel(image, 24, 24, [0, 0, 255, 255])
     pixel(image, 96, 24, [0, 0, 255, 255])
