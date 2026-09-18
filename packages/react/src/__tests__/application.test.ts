@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, copyFileSync, existsSync } from "node:fs"
+import { mkdtempSync, readFileSync, copyFileSync, existsSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { spawn, spawnSync } from "node:child_process"
@@ -133,23 +133,29 @@ describe.skipIf(process.platform !== "darwin")(
       const destination = mkdtempSync(
         join(tmpdir(), "gpuix-application-moved-"),
       )
-      const binary = join(buildDirectory, "app")
-      const build = spawnSync(
-        "bun",
-        ["build", "--compile", fixture, worker, "--outfile", binary],
-        { encoding: "utf8", timeout: 30000 },
-      )
-      expect(build.status, build.stderr).toBe(0)
-      const moved = join(destination, "app")
-      copyFileSync(binary, moved)
-      const result = spawnSync(moved, ["-NSAppSleepDisabled", "YES"], {
-        cwd: destination,
-        env: { ...environment, GPUIX_HOST_REPEATS: "2" },
-        encoding: "utf8",
-        timeout: 15000,
-      })
-      expect(result.status, result.stderr).toBe(0)
-      expect(result.stdout).toContain("cycle 2 complete")
+      try {
+        const binary = join(buildDirectory, "app")
+        const build = spawnSync(
+          "bun",
+          ["build", "--compile", fixture, worker, "--outfile", binary],
+          { cwd: buildDirectory, encoding: "utf8", timeout: 30000 },
+        )
+        expect(build.status, build.stderr).toBe(0)
+        const moved = join(destination, "app")
+        copyFileSync(binary, moved)
+        rmSync(buildDirectory, { recursive: true, force: true })
+        const result = spawnSync(moved, ["-NSAppSleepDisabled", "YES"], {
+          cwd: destination,
+          env: { ...environment, GPUIX_HOST_REPEATS: "2" },
+          encoding: "utf8",
+          timeout: 15000,
+        })
+        expect(result.status, result.stderr).toBe(0)
+        expect(result.stdout).toContain("cycle 2 complete")
+      } finally {
+        rmSync(buildDirectory, { recursive: true, force: true })
+        rmSync(destination, { recursive: true, force: true })
+      }
     }, 45000)
 
     it("runs exit cleanup on SIGTERM while AppKit owns the main thread", async () => {
