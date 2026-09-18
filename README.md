@@ -554,6 +554,12 @@ components in separate crates. GPUiX core does not depend on those crates. An
 application composition library links GPUiX and its chosen components into one
 `.node` or WebAssembly build.
 
+Cherry components are external extensions. The core package does not register
+`cherry-*` elements. Applications that use these elements must select a native
+composition that registers the Cherry component crate before the first renderer.
+The standard input, image, SVG, anchored, code, diff, and markdown elements remain
+in core.
+
 Implement `NativeElement` and `NativeElementFactory`, then register factories
 before the first renderer is created:
 

@@ -14,25 +14,11 @@ use std::collections::{HashMap, HashSet};
 use crate::renderer::EventCallback;
 
 pub mod anchored;
-pub mod app_frame;
 pub mod code;
-pub mod deck;
 pub mod diff;
-pub mod flow;
-pub mod glide;
 pub mod img;
-pub mod indicator;
 pub mod input;
-pub mod item_strip;
 pub mod markdown;
-pub mod plot;
-pub mod screen;
-pub mod selection_text;
-pub mod stream_text;
-pub mod sweep;
-pub mod toggle;
-#[cfg(target_os = "macos")]
-pub mod video;
 
 // ── Render context ───────────────────────────────────────────────────
 
@@ -313,30 +299,6 @@ impl CustomElementRegistry {
         registry.register(Box::new(input::InputFactory));
         registry.register(Box::new(input::TextareaFactory));
         registry.register(Box::new(anchored::AnchoredFactory));
-        registry.register(Box::new(indicator::IndicatorFactory));
-        registry.register(Box::new(sweep::SweepFactory));
-        registry.register(Box::new(plot::PlotFactory));
-        registry.register(Box::new(deck::DeckFactory));
-        registry.register(Box::new(toggle::ToggleFactory));
-        registry.register(Box::new(app_frame::AppFrameFactory));
-        registry.register(Box::new(item_strip::ItemStripFactory));
-        registry.register(Box::new(stream_text::StreamFactory(false)));
-        registry.register(Box::new(stream_text::StreamFactory(true)));
-        registry.register(Box::new(glide::GlideFactory(false)));
-        registry.register(Box::new(glide::GlideFactory(true)));
-        registry.register(Box::new(selection_text::SelectionTextFactory));
-        registry.register(Box::new(screen::ScreenFactory));
-        registry.register(Box::new(plot::TooltipFactory));
-        for kind in [
-            flow::FlowKind::Canvas,
-            flow::FlowKind::Node,
-            flow::FlowKind::Anchor,
-            flow::FlowKind::Edge,
-        ] {
-            registry.register(Box::new(flow::FlowFactory(kind)));
-        }
-        #[cfg(target_os = "macos")]
-        registry.register(Box::new(video::VideoFactory));
         registry.register(Box::new(img::ImgFactory));
         registry.register(Box::new(img::SvgFactory));
         registry.register(Box::new(code::CodeFactory));

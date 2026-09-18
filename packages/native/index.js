@@ -583,3 +583,4 @@ module.exports.NativeHost = nativeBinding.NativeHost
 module.exports.TestGpuixRenderer = nativeBinding.TestGpuixRenderer
 module.exports.checkUpdate = nativeBinding.checkUpdate
 module.exports.hasTestGpuixRenderer = nativeBinding.hasTestGpuixRenderer
+module.exports.nativeRuntimeInfo = nativeBinding.nativeRuntimeInfo

@@ -693,6 +693,9 @@ export interface LayerShellOptions {
   keyboardInteractivity?: string
 }
 
+/** A loader checks this contract before it constructs a native renderer. */
+export declare function nativeRuntimeInfo(): string
+
 export interface SyntaxToken {
   text: string
   kind: string
