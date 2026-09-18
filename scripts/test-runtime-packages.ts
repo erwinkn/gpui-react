@@ -7,6 +7,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
 const artifacts = resolve(process.argv[2] ?? "dist/runtime")
+const published = process.argv.includes("--published")
 const manifest = JSON.parse(readFileSync(join(artifacts, "runtime-manifest.json"), "utf8"))
 for (const item of manifest.packages) {
   assert.equal(createHash("sha256").update(readFileSync(join(artifacts, item.filename))).digest("hex"), item.sha256)
@@ -16,8 +17,11 @@ const composition = resolve("fixtures/native-composition/example.node")
 const archives = Object.fromEntries(manifest.packages.map((item: {name: string; filename: string}) => [item.name, `file:${join(artifacts, item.filename)}`]))
 try {
   writeFileSync(join(directory, "package.json"), JSON.stringify({
-    private: true, type: "module", dependencies: { ...archives, react: "19.2.4" },
-    overrides: { "@gpuix/native": "$@gpuix/native" },
+    private: true, type: "module",
+    dependencies: published
+      ? { "@gpuix/react": manifest.packages.find((item: {name: string}) => item.name === "@gpuix/react").url, react: "19.2.4" }
+      : { ...archives, react: "19.2.4" },
+    ...(published ? {} : { overrides: { "@gpuix/native": "$@gpuix/native" } }),
   }))
   execFileSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], {
     cwd: directory, encoding: "utf8", timeout: 120000,

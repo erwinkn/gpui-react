@@ -3280,7 +3280,11 @@ The browser runtime supports WebGPU and WebGL. Select consumer bindings through
 `bun scripts/package-runtime.ts <VERSION>` packs existing release builds for
 local inspection. `bun scripts/test-runtime-packages.ts <ARTIFACT_DIRECTORY>`
 checks isolated Node and Bun installs with both the default binding and the
-external composition fixture. Only CI publishes release assets. A release that
+external composition fixture. Add `--published` after the artifact directory to
+install the release URL and its matching native dependency without overrides.
+`bun fixtures/native-composition/test-package-browser.ts <ARTIFACT_DIRECTORY>`
+tests both installed browser bindings on WebGPU and WebGL. Only CI publishes
+release assets. A release that
 already exists is never replaced by this workflow.
 
 ## Native horizontal scroll groups

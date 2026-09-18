@@ -93,6 +93,7 @@ jobs:
         run: |
           bun scripts/package-runtime.ts "$RUNTIME_VERSION"
           bun scripts/test-runtime-packages.ts
+          bun fixtures/native-composition/test-package-browser.ts
           bun -e 'if (JSON.parse(await Bun.file("dist/runtime/runtime-manifest.json").text()).sourceDirty) throw new Error("Release checkout changed during build")'
       - uses: actions/upload-artifact@v4
         with:
