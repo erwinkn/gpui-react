@@ -1,6 +1,7 @@
 //! Expose the existing bounded native syntax cache to replaceable React token views.
+#[cfg(not(target_family = "wasm"))]
 use napi_derive::napi;
-#[napi(object)]
+#[cfg_attr(not(target_family = "wasm"), napi(object))]
 pub struct SyntaxToken {
     pub text: String,
     pub kind: String,
