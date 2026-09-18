@@ -14,7 +14,7 @@ use crate::renderer::{emit_event_full, EventCallback};
 
 /// Apply `role` and `aria-*` from React, plus a default role when the app
 /// did not set one. `none` / `presentation` produce no node.
-pub(crate) fn apply_accessibility<E>(
+pub fn apply_accessibility<E>(
     mut el: E,
     props: &HashMap<String, serde_json::Value>,
     default_role: Option<Role>,

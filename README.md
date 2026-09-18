@@ -547,6 +547,98 @@ State update triggers re-render → reconciler sends mutations back to Rust
 
 Event handlers are stored in a JS-side registry keyed by `(elementId, eventType)`. Rust only knows **whether** an element has a listener (via `setEventListener`), not the closure itself — the actual handler lives in JS.
 
+## Native extension crates
+
+The Rust module `gpuix_native::extension` lets an application compile native
+components in separate crates. GPUiX core does not depend on those crates. An
+application composition library links GPUiX and its chosen components into one
+`.node` or WebAssembly build.
+
+Implement `NativeElement` and `NativeElementFactory`, then register factories
+before the first renderer is created:
+
+```rust
+use gpuix_native::extension::{
+    register_extension, NativeElementRegistration, NativeExtension,
+    NATIVE_EXTENSION_API_VERSION,
+};
+
+pub fn register() -> Result<(), String> {
+    register_extension(NativeExtension {
+        id: "example.controls",
+        version: env!("CARGO_PKG_VERSION"),
+        api_version: NATIVE_EXTENSION_API_VERSION,
+        elements: &[NativeElementRegistration {
+            name: "example-meter",
+            factory: || Box::new(MeterFactory),
+        }],
+    })
+}
+```
+
+`NativeElement::render` receives `NativeRenderContext`, the GPUI window, and
+`gpui::Context<NativeView>`. `NativeView` is an opaque context owner. Use that
+context to create your own GPUI entities, observe them, and request updates.
+Their state remains on the native UI thread. Properties are synchronized only
+when changed; removed properties arrive as JSON null. `destroy` runs when the
+element is removed or the renderer closes. Release owned entities there.
+
+The public module re-exports `gpui`, `StyleDesc`, `EventPayload`, `EventCallback`,
+`emit_event_full`, `custom_surface`, `wire_standard_events`,
+`apply_interactive_styles`, `apply_styles`, `apply_accessibility`,
+`track_own_bounds`, `bounds_tracker`, colour/font helpers, and shared text
+selection helpers. Use `ctx.text` for selectable content and `ctx.chrome_text`
+for non-selectable labels. `custom_surface` applies styles, accessibility,
+bounds tracking, and declared standard events to a stateful div with a stable
+host-derived id. Advanced elements can use the individual helpers.
+
+Element names must be lowercase, contain a hyphen, and use only ASCII letters,
+digits, and hyphens. Built-in names are reserved. Duplicate names, conflicting
+extension versions, and incompatible API versions return errors. Registering
+the identical extension again is safe, including from an application worker.
+The catalog is fixed when the first renderer starts. Each renderer creates its
+own factories and instances; the global catalog holds no GPUI entities.
+
+This is a compiled Rust interface, not a dynamic-library ABI. Use the GPUI
+re-export and pin the same GPUiX revision in all component crates. JavaScript
+packages cannot add native implementations to an already built runtime. A
+composition can inspect its installed set with `registered_extensions()`.
+
+### Select the application composition
+
+Libraries declare `@gpuix/react` as a peer dependency. They do not import a native
+binary. The application selects one composition before importing React:
+
+```ts
+import { configureNativeBindings } from '@gpuix/native/runtime'
+const bindings = require('./my-runtime.node')
+configureNativeBindings(bindings)
+await import('./app.tsx')
+```
+
+For the worker host, run this setup in both `host.ts` and `application-worker.ts`,
+before importing `@gpuix/react/application`. Both must load the same compiled
+library. Use a static module path so Bun can include it in a compiled executable.
+
+The browser follows the same contract after initializing its own wasm-bindgen
+module:
+
+```ts
+import { configureNativeBindings } from '@gpuix/native/runtime'
+import * as bindings from './my-runtime.js'
+await bindings.default({ module_or_path: new URL('./my-runtime_bg.wasm', import.meta.url) })
+configureNativeBindings(bindings)
+await import('./app.tsx')
+```
+
+Importing `@gpuix/native/runtime` loads no native implementation. The regular
+`@gpuix/native` desktop and browser entries use the configured binding. They load
+their default build only if none is configured. The loader checks
+`nativeRuntimeInfo()` before it accepts a binding. Replacing a selected binding
+throws an error; reusing the identical object is allowed. This prevents two
+independent UI runtimes in one JavaScript context. A new worker must configure
+its own JavaScript context, using the same library as its native host.
+
 ## Packages
 
 - **`@gpuix/native`** — Rust bindings to GPUI. It publishes napi-rs desktop binaries and a wasm-bindgen browser build, both backed by `GpuixRenderer`, `RetainedTree`, `build_element()`, and `apply_styles()`.

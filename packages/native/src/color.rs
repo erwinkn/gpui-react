@@ -1,6 +1,6 @@
 /// Parse any color accepted by csscolorparser 0.8.3 into GPUI's sRGB paint type.
 /// Out-of-gamut channels are hard-clipped because GPUI paints sRGB Rgba/Hsla.
-pub(crate) fn parse_color_rgba(value: &str) -> Option<gpui::Rgba> {
+pub fn parse_color_rgba(value: &str) -> Option<gpui::Rgba> {
     let parsed = csscolorparser::parse(value).ok()?.clamp();
     Some(gpui::Rgba {
         r: parsed.r,

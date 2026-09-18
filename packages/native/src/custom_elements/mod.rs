@@ -123,7 +123,7 @@ impl CustomRenderContext<'_> {
 ///
 /// The caller must have given `el` a host-derived id already: gpui keys both the
 /// pseudo-style state and the accessibility node off that id.
-pub(crate) fn custom_surface(
+pub fn custom_surface(
     mut el: gpui::Stateful<gpui::Div>,
     ctx: &CustomRenderContext,
 ) -> gpui::Stateful<gpui::Div> {
@@ -154,7 +154,7 @@ pub(crate) fn custom_surface(
 /// Generic over the element, not just `Stateful<Div>`, because `<img>` and
 /// `<svg>` are gpui leaves and cannot hold a child. They declare the same props
 /// as everything else, so they have to wire the same events.
-pub(crate) fn wire_standard_events<E: gpui::StatefulInteractiveElement>(
+pub fn wire_standard_events<E: gpui::StatefulInteractiveElement>(
     mut el: E,
     ctx: &CustomRenderContext,
 ) -> E {
@@ -342,10 +342,16 @@ impl CustomElementRegistry {
         registry.register(Box::new(code::CodeFactory));
         registry.register(Box::new(diff::DiffFactory));
         registry.register(Box::new(markdown::MarkdownFactory));
+        crate::extension::install_into(&mut registry);
         registry
     }
 
     pub fn register(&mut self, factory: Box<dyn CustomElementFactory>) {
+        assert!(
+            !self.factories.contains_key(factory.element_type()),
+            "Native element {} is already registered",
+            factory.element_type()
+        );
         self.factories
             .insert(factory.element_type().to_string(), factory);
     }

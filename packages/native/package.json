@@ -2,7 +2,7 @@
   "name": "@gpuix/native",
   "version": "0.9.0",
   "license": "Apache-2.0",
-  "main": "index.js",
+  "main": "loader.cjs",
   "types": "index.d.ts",
   "browser": "browser.mjs",
   "napi": {
@@ -39,6 +39,21 @@
     "index.d.ts",
     "browser.mjs",
     "wasm",
-    "LICENSE"
-  ]
+    "LICENSE",
+    "loader.cjs",
+    "runtime.cjs",
+    "runtime.d.ts"
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "browser": "./browser.mjs",
+      "default": "./loader.cjs"
+    },
+    "./runtime": {
+      "types": "./runtime.d.ts",
+      "default": "./runtime.cjs"
+    },
+    "./package.json": "./package.json"
+  }
 }

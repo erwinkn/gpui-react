@@ -1,7 +1,16 @@
-/** Browser entry for the wasm-bindgen GPUI renderer. */
-import init, { GpuixRenderer } from "./wasm/gpuix-web.js"
-import wasmUrl from "./wasm/gpuix-web_bg.wasm" with { type: "file" }
+/** Browser entry. A configured composition bypasses the default WASM module. */
+import runtime from "./runtime.cjs";
 
-await init({ module_or_path: wasmUrl })
+let bindings = runtime.getNativeBindings();
+if (!bindings) {
+  const implementation = await import("./wasm/gpuix-web.js");
+  const { default: wasmUrl } = await import("./wasm/gpuix-web_bg.wasm", {
+    with: { type: "file" },
+  });
+  await implementation.default({ module_or_path: wasmUrl });
+  runtime.configureNativeBindings(implementation);
+  bindings = implementation;
+}
 
-export { GpuixRenderer }
+export const GpuixRenderer = bindings.GpuixRenderer;
+export const nativeRuntimeInfo = bindings.nativeRuntimeInfo;

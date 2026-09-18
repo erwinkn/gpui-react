@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[serde(untagged)]
 pub enum FontFeatureValue { Flag(bool), Number(u32) }
 pub type FontFeatureMap = std::collections::BTreeMap<String, FontFeatureValue>;
-pub(crate) fn font_features(values: &FontFeatureMap) -> gpui::FontFeatures {
+pub fn font_features(values: &FontFeatureMap) -> gpui::FontFeatures {
     gpui::FontFeatures(std::sync::Arc::new(values.iter().filter(|(tag,_)|tag.len()==4 && tag.is_ascii()).map(|(tag,value)|(tag.clone(),match value {FontFeatureValue::Flag(v)=>u32::from(*v),FontFeatureValue::Number(v)=>*v})).collect()))
 }
 

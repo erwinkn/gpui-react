@@ -69,7 +69,7 @@ fn with_window_menu_actions(root: gpui::Div) -> gpui::Div {
 /// Parse a CSS font-weight value (string or number) into a GPUI FontWeight.
 /// Accepts named keywords ("bold", "semibold"), numeric strings ("700"),
 /// and raw numbers (700). Falls back to 400 (normal) for unrecognized values.
-pub(crate) fn parse_font_weight(value: &crate::style::FontWeightValue) -> gpui::FontWeight {
+pub fn parse_font_weight(value: &crate::style::FontWeightValue) -> gpui::FontWeight {
     match value {
         crate::style::FontWeightValue::Num(n) => gpui::FontWeight((*n as f32).clamp(1.0, 1000.0)),
         crate::style::FontWeightValue::Str(s) => {
@@ -95,9 +95,9 @@ pub(crate) fn parse_font_weight(value: &crate::style::FontWeightValue) -> gpui::
 
 /// Abstracted event callback shared by desktop, browser, and test renderers.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) type EventCallback = Arc<dyn Fn(EventPayload) + Send + Sync>;
+pub type EventCallback = Arc<dyn Fn(EventPayload) + Send + Sync>;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-pub(crate) type EventCallback = Rc<dyn Fn(EventPayload)>;
+pub type EventCallback = Rc<dyn Fn(EventPayload)>;
 
 /// Validate and convert a JS number (f64) to a u64 element ID.
 /// JS numbers are f64 — lossless for integers up to 2^53.
@@ -3164,7 +3164,7 @@ impl Drop for GpuixRenderer {
 
 // ── GPUI View ────────────────────────────────────────────────────────
 
-pub(crate) struct GpuixView {
+pub struct GpuixView {
     #[cfg(target_os = "macos")]
     host_after_paint: Option<Rc<dyn Fn(&mut gpui::Window, &mut gpui::App)>>,
     pub(crate) tree: Arc<Mutex<RetainedTree>>,
@@ -5526,7 +5526,7 @@ pub(crate) fn apply_height<E: gpui::Styled>(el: E, dim: &crate::style::Dimension
 /// element that only applied the base styles accepted the prop, serialized it,
 /// and dropped it. gpui reads both refinements from the element state behind the
 /// element's `ElementId`, so the caller must have called `.id(..)` first.
-pub(crate) fn apply_interactive_styles<E>(mut el: E, style: &StyleDesc) -> E
+pub fn apply_interactive_styles<E>(mut el: E, style: &StyleDesc) -> E
 where
     E: gpui::Styled + gpui::StatefulInteractiveElement,
 {
@@ -5554,7 +5554,7 @@ where
     el
 }
 
-pub(crate) fn apply_styles<E: gpui::Styled>(mut el: E, style: &StyleDesc) -> E {
+pub fn apply_styles<E: gpui::Styled>(mut el: E, style: &StyleDesc) -> E {
     match style.display.as_deref() {
         Some("flex") => el = el.flex(),
         Some("grid") => el = el.grid(),
@@ -5951,7 +5951,7 @@ pub(crate) fn mouse_button_to_u32(button: gpui::MouseButton) -> u32 {
 /// caller customize it via a closure, then sends it through the callback.
 /// Production: queues on Node.js event loop via ThreadsafeFunction.
 /// Tests: pushes to a synchronous Vec for drainEvents().
-pub(crate) fn emit_event_full(
+pub fn emit_event_full(
     callback: &Option<EventCallback>,
     element_id: u64,
     event_type: &str,

@@ -17,6 +17,7 @@ mod accessibility;
 mod automation;
 mod color;
 mod custom_elements;
+pub mod extension;
 mod diff;
 mod element_tree;
 mod markdown;
