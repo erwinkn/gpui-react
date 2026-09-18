@@ -25,6 +25,20 @@ export declare class AvailableUpdate {
 
 /** The main GPUI renderer exposed to Node.js. */
 export declare class GpuixRenderer {
+  /** Test support: resize the actual macOS content view through GPUI. */
+  resizeWindowForTest(width: number, height: number): void
+  /**
+   * Test only: force native CPU draws while the real window stays in the background.
+   * This is not a display cadence or physical presentation measurement.
+   */
+  startHostProbe(durationMs: number, elementId: number, testId?: string | undefined | null): void
+  markHostProbe(label: string): void
+  takeHostProbe(): string
+  /**
+   * Test support: enqueue mouse motion in this process's AppKit queue.
+   * This does not move the system pointer or post events to another app.
+   */
+  queueAppKitMouseMoves(count: number, x: number, y: number, deltaY: number): void
   constructor(eventCallback?: (((err: Error | null, arg: EventPayload) => any)) | undefined | null)
   /** Initialize GPUI using the native event-loop architecture for this OS. */
   init(options?: WindowOptions | undefined | null): void
@@ -49,14 +63,15 @@ export declare class GpuixRenderer {
    * Acquires the tree mutex ONCE for the entire batch.
    */
   applyBatch(json: string): Array<number>
-  /** Wake the embedded macOS pump at display cadence. Null unregisters. Other platforms return false. */
-  setFrameCallback(callback: ((err: Error | null) => void) | null): boolean
-  /** Start opt-in draw/submission timing. keepVisible temporarily floats the first native window without pointer input and prevents App Nap during capture. */
-  startFrameProfile(keepVisible?: boolean | null): void
-  /** Test support, macOS: queue motion in this app only. Does not move the system pointer. */
-  queueAppKitMouseMoves(count: number, x: number, y: number, deltaY: number): void
-  /** End timing, restore visibility/tracing, and return JSON timestamps. No message content is recorded. */
+  /** Begin an opt-in profile of native draws, submissions, and binding work. */
+  startFrameProfile(keepVisible?: boolean | undefined | null): void
+  /** Stop profiling and return timing data as JSON. No content is recorded. */
   takeFrameProfile(): string
+  /**
+   * Enqueue a host tick at display cadence. Only macOS needs an embedded
+   * host pump. Calls are coalesced until tick() begins; no frame queue grows.
+   */
+  setFrameCallback(callback?: (((err: Error | null, ) => any)) | undefined | null): boolean
   /** Pump the native event loop. Returns false after the last window closes. */
   tick(): boolean
   isInitialized(): boolean
@@ -107,9 +122,15 @@ export declare class GpuixRenderer {
   blur(): void
   /** Enable the window selectionChange event requested by the React renderer. */
   setWindowSelectionChange(enabled: boolean, eventId: number): void
+  /** Register private application fonts before the first text layout. */
+  registerFonts(fonts: Array<Buffer>): void
+  /** Cached syntax tokens with line-relative UTF-16 offsets for React views. */
+  highlightCode(source: string, path?: string | undefined | null, language?: string | undefined | null): Array<Array<SyntaxToken>>
+  /** Batch native font measurements for data-dependent cell layouts. */
+  measureTextWidths(family: string, size: number, weight: number, texts: Array<string>): Array<number>
   /** The current text selection joined in document order, or null. */
   getSelectedText(): string | null
-  /** Current-frame visible selected ranges, UTF-16 offsets and window rectangles as JSON. */
+  /** Selected text plus current visible range geometry, in window pixels. */
   getSelectionInfo(): string
   /** Drop the current selection and request a repaint. */
   clearSelection(): void
@@ -175,6 +196,36 @@ export declare class GpuixRenderer {
   captureScreenshot(path: string): void
 }
 
+export declare class NativeClient {
+  constructor(id: number)
+  /** False means backpressure. The caller must retain and retry the complete request. */
+  send(message: string): boolean
+  drain(): Array<string>
+  get closed(): boolean
+  get protocolVersion(): number
+  get closeReason(): string
+  close(reason: string): void
+  /** Validate a complete commit on the application runtime, with no UI-thread wait. */
+  prepareBatch(json: string): Array<number>
+  registerFonts(fonts: Array<Buffer>): void
+  measureTextWidths(family: string, size: number, weight: number, texts: Array<string>): Array<number>
+  highlightCode(source: string, path?: string | undefined | null, language?: string | undefined | null): Array<Array<SyntaxToken>>
+  receive(): Promise<Array<string>>
+  /** Read the last complete native frame. A fresh query uses the command channel. */
+  readSnapshot(method: string, elementId?: number | undefined | null): string
+  /** Automation input must not depend on the launcher's blocked JS event loop. */
+  enableStdio(): boolean
+  writeStdio(message: string): void
+}
+
+export declare class NativeHost {
+  constructor(options?: WindowOptions | undefined | null)
+  get id(): number
+  /** Blocks the main JS launcher until shutdown. Application JS runs in the worker. */
+  run(): string
+  requestShutdown(reason: string): void
+}
+
 /**
  * GPU-backed GPUI test renderer. Uses VisualTestAppContext with the native
  * Metal or DirectX renderer and TestDispatcher for deterministic scheduling.
@@ -203,6 +254,12 @@ export declare class TestGpuixRenderer {
    * Returns accumulated destroyed IDs from all destroyElement ops.
    */
   applyBatch(json: string): Array<number>
+  /** Register private application fonts before the first text layout. */
+  registerFonts(fonts: Array<Buffer>): void
+  /** Cached syntax tokens with line-relative UTF-16 offsets for React views. */
+  highlightCode(source: string, path?: string | undefined | null, language?: string | undefined | null): Array<Array<SyntaxToken>>
+  /** Batch native font measurements for data-dependent cell layouts. */
+  measureTextWidths(family: string, size: number, weight: number, texts: Array<string>): Array<number>
   /**
    * Notify the view entity and run GPUI until parked.
    * This triggers GpuixView::render() → build_element() → GPUI layout.
@@ -280,7 +337,7 @@ export declare class TestGpuixRenderer {
   simulateFileDrop(x: number, y: number, paths: Array<string>): void
   /** The current text selection joined in document order, or null. */
   getSelectedText(): string | null
-  /** Current-frame visible selected ranges, UTF-16 offsets and window rectangles as JSON. */
+  /** Selected text plus current visible range geometry, in window pixels. */
   getSelectionInfo(): string
   /** Drop the current selection. */
   clearSelection(): void
@@ -634,6 +691,13 @@ export interface LayerShellOptions {
    * overlay that never takes keyboard focus.
    */
   keyboardInteractivity?: string
+}
+
+export interface SyntaxToken {
+  text: string
+  kind: string
+  start: number
+  end: number
 }
 
 /** One extra HTTP header on the feed or download request. */

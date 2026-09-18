@@ -9,15 +9,8 @@
 use napi_derive::napi;
 
 /// Event payload sent back to JS when a user interacts with an element.
-#[derive(Debug, Clone)]
-#[cfg_attr(
-    all(target_arch = "wasm32", target_os = "unknown"),
-    derive(serde::Serialize)
-)]
-#[cfg_attr(
-    all(target_arch = "wasm32", target_os = "unknown"),
-    serde(rename_all = "camelCase")
-)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), napi(object))]
 pub struct EventPayload {
     /// Numeric element ID (matches the ID assigned in JS via createElement).
@@ -29,62 +22,76 @@ pub struct EventPayload {
 
     // ── Mouse position ───────────────────────────────────────────────
     /// Mouse X position in window coordinates (pixels).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub x: Option<f64>,
     /// Mouse Y position in window coordinates (pixels).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub y: Option<f64>,
 
     // ── Mouse button ─────────────────────────────────────────────────
     /// Which mouse button: 0=left, 1=middle, 2=right.
     /// Populated for: mouseDown, mouseUp, click, mouseDownOutside, contextMenu.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub button: Option<u32>,
 
     /// Number of consecutive clicks (1=single, 2=double, 3=triple).
     /// Populated for: mouseDown, mouseUp, click.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub click_count: Option<u32>,
 
     /// Whether this is a right-click (convenience for click events).
     /// true when button==2 or ClickEvent::is_right_click().
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_right_click: Option<bool>,
 
     /// Which mouse button is currently held during a mouseMove.
     /// Same encoding as `button`: 0=left, 1=middle, 2=right.
     /// Populated for: mouseMove.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pressed_button: Option<u32>,
 
     // ── Keyboard ─────────────────────────────────────────────────────
     /// Key name, e.g. "a", "enter", "escape", "down", "left", "f1".
     /// Populated for: keyDown, keyUp.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
 
     /// The character produced by the key press (e.g. "ß" for option-s).
     /// May differ from `key` when modifiers are active.
     /// Populated for: keyDown, keyUp.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub key_char: Option<String>,
 
     /// Whether this is a key-repeat event (key held down).
     /// Populated for: keyDown.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_held: Option<bool>,
 
     // ── Scroll ───────────────────────────────────────────────────────
     /// Scroll delta on the X axis (pixels or lines, see `precise`).
     /// Populated for: scroll.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub delta_x: Option<f64>,
 
     /// Scroll delta on the Y axis (pixels or lines, see `precise`).
     /// Populated for: scroll.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub delta_y: Option<f64>,
 
     /// true = pixel-precise (trackpad), false = line-based (mouse wheel).
     /// Populated for: scroll.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub precise: Option<bool>,
 
     /// Touch phase for scroll: "started", "moved", "ended".
     /// Populated for: scroll (trackpad gestures).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub touch_phase: Option<String>,
 
     // ── Hover ────────────────────────────────────────────────────────
     /// true = mouse entered element, false = mouse left element.
     /// Populated for: mouseEnter, mouseLeave.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hovered: Option<bool>,
 
     // ── Custom element payloads ──────────────────────────────────────
@@ -93,34 +100,43 @@ pub struct EventPayload {
     /// hidden line count), and lineClick (the line text); `<markdown>`
     /// linkClick (the URL); `selectionChange` (joined selected text, or
     /// absent when the selection is empty).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
 
     /// Line number on the pre-change side. Populated for: `<diff>` lineClick.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub old_line: Option<f64>,
 
     /// Line number on the post-change side. Populated for: `<diff>` lineClick.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub new_line: Option<f64>,
 
     /// First visible logical index. Populated for: `<virtual-list>` visibleRange.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start_index: Option<f64>,
 
     /// Exclusive end of the visible logical range. Populated for: visibleRange.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end_index: Option<f64>,
 
     /// Native follow-tail state after user scrolling. Absent on data-range requests.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_following_tail: Option<bool>,
 
     /// Matches found by this element's `highlight` prop. Counted once per match
     /// even when it is split across several painted runs, and it counts every
     /// retained match, not only the ones currently on screen.
     /// Populated for: highlight.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub match_count: Option<f64>,
 
     /// Absolute filesystem paths from a Finder / OS file drop.
     /// Populated for: fileDrop.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub paths: Option<Vec<String>>,
 
     // ── Modifiers ────────────────────────────────────────────────────
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub modifiers: Option<EventModifiers>,
 }
 
@@ -156,11 +172,7 @@ impl Default for EventPayload {
     }
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(
-    all(target_arch = "wasm32", target_os = "unknown"),
-    derive(serde::Serialize)
-)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), napi(object))]
 pub struct EventModifiers {
     pub shift: bool,
@@ -185,15 +197,8 @@ impl Default for EventModifiers {
 /// The rects matter: a quad never lands in `getPaintedText()`, and a match that
 /// soft-wraps must produce one box per visual row. Without the geometry the only
 /// way to assert either is a screenshot.
-#[derive(Debug, Clone)]
-#[cfg_attr(
-    all(target_arch = "wasm32", target_os = "unknown"),
-    derive(serde::Serialize)
-)]
-#[cfg_attr(
-    all(target_arch = "wasm32", target_os = "unknown"),
-    serde(rename_all = "camelCase")
-)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), napi(object))]
 pub struct HighlightMatch {
     /// Numeric id of the element that painted the run.
@@ -209,11 +214,7 @@ pub struct HighlightMatch {
     pub rects: Vec<HighlightRect>,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(
-    all(target_arch = "wasm32", target_os = "unknown"),
-    derive(serde::Serialize)
-)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), napi(object))]
 pub struct HighlightRect {
     pub x: f64,

@@ -18,7 +18,7 @@ use gpui::{
 };
 use web_time::Instant;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct ElementBounds {
     pub x: f64,
     pub y: f64,

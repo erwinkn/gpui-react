@@ -6,6 +6,11 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
+    "./application": {
+      "types": "./dist/application.d.ts",
+      "import": "./dist/application.js",
+      "default": "./dist/application.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",

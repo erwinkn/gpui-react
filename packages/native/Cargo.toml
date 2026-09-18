@@ -79,6 +79,7 @@ web-sys = { version = "0.3", features = ["Navigator", "Window"] }
 # macOS text/graphics deps - pinned to avoid core-graphics version conflicts
 # core-text 21.1.0 uses core-graphics 0.25 which conflicts with font-kit's core-graphics 0.24
 [target.'cfg(target_os = "macos")'.dependencies]
+signal-hook = "0.4"
 objc = "0.2"
 core-video = "0.5.2"
 core-foundation = "0.10"

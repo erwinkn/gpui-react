@@ -24,6 +24,8 @@ mod motion;
 mod renderer;
 mod scroll_groups;
 mod frame_profile;
+#[cfg(all(feature = "test-support", target_os = "macos"))]
+mod host_probe;
 // The data model is public so `examples/bench_serde.rs` measures the real
 // types instead of a copy that silently drifts from them.
 pub mod retained_tree;

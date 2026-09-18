@@ -13,6 +13,50 @@ and native `<markdown>`.
 
 ## Quickstart
 
+### Native-owned application loop on macOS
+
+`@gpuix/react/application` separates the main AppKit thread from application JavaScript. Put React, application state, and plugin imports in an explicit worker module. Do not pass React elements or closures across runtimes.
+
+```ts
+// host.ts
+import { runApplication } from '@gpuix/react/application'
+await runApplication(new URL('./application-worker.ts', import.meta.url), {
+  title: 'My app', width: 800, height: 600,
+  focus: process.env.GPUIX_BACKGROUND !== '1',
+})
+```
+
+```ts
+// application-worker.ts
+import { attachApplication } from '@gpuix/react/application'
+const renderer = attachApplication()
+await import('./app.tsx') // This module calls the existing render(<App />).
+```
+
+Run `bun host.ts`. For a standalone Bun executable, include both entry points:
+
+```sh
+bun build --compile host.ts application-worker.ts --outfile my-app
+```
+
+The main launcher enters `NSApplication::run` through N-API. It does not use a JavaScript frame timer. The native host sends commands through GPUI's foreground executor and returns events through a native queue. The worker keeps application callbacks. A blocked worker cannot produce new application content, but committed native animation, scrolling, and input controls keep native ownership.
+
+The host creates a hidden window, then applies the first scene and its layout-effect commands before it draws and shows the window. `focus: false` and `GPUIX_BACKGROUND=1` keep that window in the background. React mutations and synchronous layout-effect focus or scroll commands cross the channel as one transaction. The original mutation parser retains its atomic validation.
+
+`ApplicationRenderer` implements the existing React renderer interface. Its synchronous geometry, focus, and selection getters read the last complete native frame. They do not force a draw or wait for the UI thread. The synchronous automation tree combines the worker commit model with those saved bounds. Use `await renderer.query('getAutomationTree')` for a fresh native layout, or an ordered query such as `await renderer.query('getFocusedElementId')`. `await renderer.whenIdle()` waits for accepted commands; it does not force a frame. Native text shaping and font registration execute in the worker through GPUI's text system.
+
+The application and native queues each have a 4 MiB limit. The application allows 256 pending commands. A native transaction contains at most 256 commands. A full application queue rejects new work; await `whenIdle()` before retrying. Complete accepted transactions retain their order. Native request IDs must increase. Each host has a new session ID and permits one client. Old sessions reject new requests. Element IDs retain the reconciler's existing lifetime rules.
+
+Native events have separate limits of 4096 records and 4 MiB. If the application does not read them before that limit, the host terminates the session with an explicit overflow error. It never waits for a JavaScript callback from the UI thread. Native command slices yield after 32 transactions or four milliseconds. An individual transaction stays atomic and can exceed that time budget.
+
+Closing the last window ends the native loop. The launcher then asks the worker to unmount React and exit, which runs normal application exit cleanup. It waits up to two seconds, then terminates a worker that cannot respond. Application cleanup code cannot run while that runtime is blocked; native session resources still close. A worker crash or unload closes its native session. Startup errors return to the launcher. A worker must call `attachApplication()` within ten seconds. Runtime React errors retain the existing error overlay. SIGINT and SIGTERM request native shutdown while a host runs; the worker runs its exit cleanup. Default signal behavior applies after the host ends. Per-signal JavaScript handlers are not forwarded.
+
+Automation uses the existing stdio protocol. A native reader and writer avoid dependence on the launcher's blocked JavaScript loop. Per-frame measurements and layout stay native. No frame samples cross the application channel during normal operation.
+
+The worker uses a second native retained tree to validate commits without waiting for the UI. This adds memory and parsing cost; virtualization still bounds mounted content. A transaction can delay a native frame while it runs. The worker boundary does not isolate native crashes or shared native resource locks.
+
+This startup path currently supports macOS and has been tested with Bun. Hot module reload is not supported on this path; restart the application after a source change. Other platforms keep the existing `render()` startup. Do not infer Windows, Linux, or Node.js runtime validation from the macOS checks.
+
 Create an app from the official example. The command downloads only
 `example-app/` and installs its dependencies. There is no repository clone,
 native build, or Rust toolchain.

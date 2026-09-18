@@ -42,6 +42,13 @@ use crate::style::StyleDesc;
 use crate::text::{selectable_text, selection_frame_reset, SharedSelection};
 use crate::theme::Theme;
 
+#[cfg(target_os = "macos")]
+mod host_runtime;
+#[cfg(target_os = "macos")]
+mod host_signals;
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
+mod host_test_support;
+
 /// The Window menu items act on the focused window, and the root element is the
 /// only place in GPUIX that has one. `crate::app_menu` owns everything else.
 #[cfg(target_os = "macos")]
@@ -824,6 +831,8 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 #[napi]
 pub struct GpuixRenderer {
+    #[cfg(target_os = "macos")]
+    native_event_callback: Option<EventCallback>,
     event_callback: Mutex<Option<Arc<ThreadsafeFunction<EventPayload>>>>,
     tree: Arc<Mutex<RetainedTree>>,
     initialized: Arc<Mutex<bool>>,
@@ -844,8 +853,17 @@ pub struct GpuixRenderer {
 #[napi]
 impl GpuixRenderer {
     fn event_callback_for_view(&self) -> Option<EventCallback> {
+        #[cfg(target_os = "macos")]
+        if let Some(callback) = &self.native_event_callback {
+            return Some(callback.clone());
+        }
         self.event_callback.lock().unwrap().clone().map(|tsf| {
             Arc::new(move |payload: EventPayload| {
+                #[cfg(all(feature = "test-support", target_os = "macos"))]
+                crate::host_probe::record(
+                    "input",
+                    serde_json::json!({"type": payload.event_type, "y": payload.y}),
+                );
                 tsf.call(Ok(payload), ThreadsafeFunctionCallMode::NonBlocking);
             }) as EventCallback
         })
@@ -954,6 +972,8 @@ impl GpuixRenderer {
     pub fn new(event_callback: Option<ThreadsafeFunction<EventPayload>>) -> Self {
         let _ = env_logger::try_init();
         Self {
+            #[cfg(target_os = "macos")]
+            native_event_callback: None,
             event_callback: Mutex::new(event_callback.map(Arc::new)),
             tree: Arc::new(Mutex::new(RetainedTree::new())),
             initialized: Arc::new(Mutex::new(false)),
@@ -1268,66 +1288,10 @@ impl GpuixRenderer {
         crate::frame_profile::start(keep_visible.unwrap_or(false));
     }
 
-    /// Test support: resize the actual macOS content view through GPUI.
-    #[cfg(all(feature = "test-support", target_os = "macos"))]
-    #[napi]
-    pub fn resize_window_for_test(&self, width: f64, height: f64) -> Result<()> {
-        if !width.is_finite()
-            || !height.is_finite()
-            || width < 100.0
-            || height < 100.0
-            || width > 10000.0
-            || height > 10000.0
-        {
-            return Err(Error::from_reason(
-                "Test window dimensions must be between 100 and 10,000 pixels",
-            ));
-        }
-        update_window_without_view(|window, _| {
-            window.resize(gpui::size(gpui::px(width as f32), gpui::px(height as f32)))
-        })
-    }
-
     /// Stop profiling and return timing data as JSON. No content is recorded.
     #[napi]
     pub fn take_frame_profile(&self) -> String {
         crate::frame_profile::take()
-    }
-
-    /// Test support: enqueue mouse motion in this process's AppKit queue.
-    /// This does not move the system pointer or post events to another app.
-    #[cfg(feature = "test-support")]
-    #[napi]
-    pub fn queue_app_kit_mouse_moves(
-        &self,
-        count: u32,
-        x: f64,
-        y: f64,
-        delta_y: f64,
-    ) -> Result<()> {
-        if count > 10_000 {
-            return Err(Error::from_reason(
-                "At most 10,000 test events may be queued",
-            ));
-        }
-        if !x.is_finite() || !y.is_finite() || !delta_y.is_finite() {
-            return Err(Error::from_reason(
-                "Test pointer coordinates must be finite",
-            ));
-        }
-        #[cfg(target_os = "macos")]
-        {
-            return MAC_PLATFORM.with(|platform| {
-                let platform = platform.borrow();
-                let platform = platform
-                    .as_ref()
-                    .ok_or_else(|| Error::from_reason("Renderer not initialized"))?;
-                platform.queue_test_mouse_moves(count, x, y, delta_y);
-                Ok(())
-            });
-        }
-        #[cfg(not(target_os = "macos"))]
-        Err(Error::from_reason("AppKit event testing requires macOS"))
     }
 
     /// Enqueue a host tick at display cadence. Only macOS needs an embedded
@@ -3201,6 +3165,8 @@ impl Drop for GpuixRenderer {
 // ── GPUI View ────────────────────────────────────────────────────────
 
 pub(crate) struct GpuixView {
+    #[cfg(target_os = "macos")]
+    host_after_paint: Option<Rc<dyn Fn(&mut gpui::Window, &mut gpui::App)>>,
     pub(crate) tree: Arc<Mutex<RetainedTree>>,
     pub(crate) event_callback: Option<EventCallback>,
     pub(crate) window_title: String,
@@ -3413,6 +3379,8 @@ impl GpuixView {
         selection: SharedSelection,
     ) -> Self {
         Self {
+            #[cfg(target_os = "macos")]
+            host_after_paint: None,
             tree,
             event_callback,
             window_title,
@@ -4487,6 +4455,8 @@ impl gpui::Render for GpuixView {
             let drag_move_view = cx.weak_entity();
             let drag_end_view = drag_move_view.clone();
             let root = gpui::div().size_full();
+            #[cfg(target_os = "macos")]
+            let after_paint = self.host_after_paint.clone();
             with_window_menu_actions(root)
                 .when(
                     self.window_key_down
@@ -4524,6 +4494,20 @@ impl gpui::Render for GpuixView {
                 ))
                 .child(crate::automation::bounds_frame_reset())
                 .child(result)
+                .map(|root| {
+                    #[cfg(target_os = "macos")]
+                    if let Some(after_paint) = after_paint {
+                        return root.child(
+                            gpui::canvas(|_, _, _| (), move |_, _, window, cx| {
+                                window.defer(cx, move |window, cx| after_paint(window, cx));
+                            })
+                            .absolute()
+                            .w(gpui::px(0.))
+                            .h(gpui::px(0.)),
+                        );
+                    }
+                    root
+                })
                 .into_any_element()
         };
 
