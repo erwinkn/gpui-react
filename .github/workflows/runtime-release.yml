@@ -47,6 +47,16 @@ jobs:
         with:
           cache: false
           rustflags: ""
+      - uses: actions/cache/restore@v4
+        id: cargo-cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}-
       - name: Install browser and Metal toolchains
         run: |
           test "$(uname -m)" = arm64
@@ -107,6 +117,14 @@ jobs:
           path: |
             packages/react/screenshots/extension-composition/
             ${{ runner.temp }}/composition-server.log
+      - uses: actions/cache/save@v4
+        if: always() && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
 
   publish:
     needs: build-test

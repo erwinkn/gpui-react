@@ -74,6 +74,7 @@ try {
     for (const backend of ["webgpu", "webgl"]) {
       await browser("open", `${server.url}?entry=${entry}&backend=${backend}`)
       await browser("wait", "--fn", "Boolean(globalThis.packageProbe && globalThis.gpuix)")
+      await browser("wait", "--fn", "(async()=>(await globalThis.gpuix.getByTestId('package-probe').all())[0]?.bounds?.width === 64)()")
       const { result } = await browser("eval", `(async()=>({info:globalThis.packageProbe, bounds:(await globalThis.gpuix.getByTestId('package-probe').waitFor()).bounds, viewport:innerWidth, canvas:{width:document.querySelector('canvas').width,rect:document.querySelector('canvas').getBoundingClientRect().toJSON()}, resources:performance.getEntriesByType('resource').map(x=>x.name)}))()`)
       assert.equal(result.info.extensions.length, entry === "selected" ? 1 : 0)
       assert.equal(result.bounds.width, 64)

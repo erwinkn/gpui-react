@@ -21,6 +21,7 @@ try {
   for (const backend of ["webgpu", "webgl"]) {
     browser(["open", `${base}/?backend=${backend}`])
     browser(["wait", "--fn", "Boolean(globalThis.extensionProbe && globalThis.gpuix)"])
+    browser(["wait", "--fn", "(async()=>(await globalThis.gpuix.getByTestId('texture').all())[0]?.bounds?.width === 64)()"])
     const geometry = evaluate(`(async()=>({
       entry: await globalThis.gpuix.getByTestId('texture').waitFor(),
       canvas: {width: document.querySelector('canvas').width, rect: document.querySelector('canvas').getBoundingClientRect().toJSON()},
@@ -54,7 +55,7 @@ try {
     pixel(image, 96, 24, [0, 255, 0, 255])
     assert.equal(evaluate("(async()=>{await globalThis.gpuix.getByTestId('texture').click();return globalThis.extensionProbe.clicks()})()"), 1)
     evaluate("globalThis.extensionProbe.resize()")
-    browser(["wait", "--fn", "(async()=>(await globalThis.gpuix.getByTestId('texture').waitFor()).bounds.width === 32)()"])
+    browser(["wait", "--fn", "(async()=>(await globalThis.gpuix.getByTestId('texture').all())[0]?.bounds?.width === 32)()"])
     image = screenshot("resized")
     pixel(image, 24, 24, [32, 0, 223, 255])
     pixel(image, 48, 40, [0, 0, 255, 255])
@@ -69,6 +70,11 @@ try {
   }
   writeFileSync(resolve(output, "browser-results.json"), JSON.stringify(proofs, null, 2) + "\n")
   console.log("WebGPU and WebGL composition tests passed")
+} catch (error) {
+  writeFileSync(resolve(output, "browser-failure.json"), JSON.stringify({
+    error: String(error), logs: browser(["console"]), errors: browser(["errors"]),
+  }, null, 2) + "\n")
+  throw error
 } finally {
   browser(["close"])
 }
