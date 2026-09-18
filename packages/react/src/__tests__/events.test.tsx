@@ -2270,6 +2270,51 @@ describeNative("events", () => {
       expect(offset![1]).toBeLessThan(0)
     })
 
+    it.each([false, true])("keeps wheel callbacks while nested scroll chains, list=%s", (useList) => {
+      const observations: string[] = []
+      let outer: any
+      let inner: any
+      testRoot.render(
+        <div
+          ref={(node) => { outer = node }}
+          style={{ width: 100, height: 200, display: "flex", flexDirection: "column", overflowY: "scroll" }}
+          onScroll={() => observations.push("outer")}
+        >
+          <div
+            ref={useList ? undefined : (node) => { inner = node }}
+            style={{ height: 100, flexShrink: 0, overflowY: useList ? undefined : "scroll" }}
+            onScroll={() => observations.push("inner")}
+          >
+            {useList ? (
+              <virtual-list
+                ref={(node) => { inner = node }}
+                estimatedItemHeight={30}
+                style={{ height: 100 }}
+              >
+                {Array.from({ length: 10 }, (_, index) => <div key={index} style={{ height: 30 }} />)}
+              </virtual-list>
+            ) : <div style={{ height: 300 }} />}
+          </div>
+          <div style={{ height: 600, flexShrink: 0 }} />
+        </div>,
+      )
+
+      testRoot.renderer.nativeSimulateScrollWheel(10, 10, 0, -50)
+      expect(observations).toEqual(["inner", "outer"])
+      expect(testRoot.renderer.getScrollOffset(outer.id)?.[1]).toBe(0)
+      if (useList) {
+        expect(testRoot.renderer.getListScrollTop(inner.id)?.slice(0, 2)).toEqual([1, 20])
+      } else {
+        expect(testRoot.renderer.getScrollOffset(inner.id)?.[1]).toBe(-50)
+      }
+
+      testRoot.renderer.nativeSimulateScrollWheel(10, 10, 0, -1000)
+      expect(testRoot.renderer.getScrollOffset(outer.id)?.[1]).toBe(0)
+      testRoot.renderer.nativeSimulateScrollWheel(10, 10, 0, -50)
+      expect(testRoot.renderer.getScrollOffset(outer.id)?.[1]).toBe(-50)
+      expect(observations).toEqual(["inner", "outer", "inner", "outer", "inner", "outer"])
+    })
+
     it("should expose element id via ref for programmatic scroll", () => {
       let capturedRef: any = null
 

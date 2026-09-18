@@ -458,19 +458,17 @@ only the rows GPUI requests. Never capture the root render's tree guard or
 `<diff>` still owns its parsed Rust data because one native diff node is much
 cheaper than retaining one React node per line.
 
-## Nested scrolling is not supported
+## Native scroll consumption preserves callbacks
 
-Never put a scroll container inside another scroll container. That includes
-`overflow: "scroll"`, `<virtual-list>`, and `<diff>` (`gpui::list()` always
-takes the wheel). GPUI delivers the same wheel event to both hitboxes. The
-inner list steals the gesture. Nested scroll looks broken and there is no
-GPUI API to turn list scroll off.
+A native div or list that moves consumes the default scroll action with
+`window.prevent_default()`. It must not stop event propagation. GPUiX's
+`onScroll` callback and ancestor wheel observers still need that event.
+The next event can scroll a parent when the inner scroller is at its boundary.
 
-Keep **one** scroll parent. Long inner content must grow with that parent, or
-collapse behind an expandable (file header, first N lines, Show more). `<diff>`
-defaults to flow layout. Pass `scroll` plus a bounded height only for a
-dedicated viewer. Do not give `<diff>` a bounded height inside a parent
-scroller just so it can virtualize.
+Prefer one scroll parent for long content. Use a bounded inner scroll container
+only when the content needs independent scrolling. `<diff>` defaults to flow
+layout; use `scroll` for a dedicated viewer. Tests cover div and list boundary
+chaining, as well as same-element and ancestor wheel callbacks.
 
 `overflow-x: scroll` is allowed inside a vertical scroller. GPUI remaps a
 vertical wheel onto overflow-x unless `restrict_scroll_to_axis()` is set.
@@ -1375,7 +1373,7 @@ If remorses says OK, follow the rest of this file and these rules.
 
 - Add a `.changeset/*.md` file for every user-facing fix or feature. Put `Fixes #N` on its own line when the work closes an issue
 - Run the package test scripts: `packages/react` then build `@gpuix/react`, then `examples`
-- Keep one scroll parent. Nested scrolling is not supported
+- Prefer one scroll parent. Native scroll consumption must preserve wheel callbacks
 - Send every painted string through `crate::text`. Never `div().child(some_string)`
 - Put layout numbers on `Theme::metrics`, not new Rust constants
 

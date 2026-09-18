@@ -11,6 +11,9 @@ const loader = fileURLToPath(
 const generated = fileURLToPath(
   new URL("../../../native/index.js", import.meta.url),
 );
+const browser = fileURLToPath(
+  new URL("../../../native/browser.mjs", import.meta.url),
+);
 const run = (body: string) =>
   execFileSync(
     "node",
@@ -53,6 +56,17 @@ describe("native composition loader", () => {
       import(${JSON.stringify(loader)}).then(module => {
         assert.equal(module.GpuixRenderer, bindings.GpuixRenderer);
         assert.equal(module.nativeRuntimeInfo, bindings.nativeRuntimeInfo);
+      });`),
+    ).toBe("");
+  });
+
+  it("uses configured browser bindings without importing the default WASM", () => {
+    expect(
+      run(`api.configureNativeBindings(bindings);
+      import(${JSON.stringify(browser)}).then(module => {
+        assert.equal(module.GpuixRenderer, bindings.GpuixRenderer);
+        assert.equal(module.nativeRuntimeInfo, bindings.nativeRuntimeInfo);
+        assert.equal(require.cache[${JSON.stringify(generated)}], undefined);
       });`),
     ).toBe("");
   });

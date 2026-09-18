@@ -1,4 +1,4 @@
 [submodule "zed"]
 	path = zed
 	url = https://github.com/erwinkn/zed.git
-	branch = cherry/host-runtime
+	branch = cherry/framework-runtime

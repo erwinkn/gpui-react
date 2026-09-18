@@ -1156,19 +1156,20 @@ Containers with `overflow: "scroll"` become natively scrollable. GPUI handles sc
 
 Plain scroll containers still build every child. Use `<virtual-list>` below when the collection can grow large.
 
-> [!IMPORTANT]
-> **Nested scrolling is not supported.** One parent may scroll. An inner
-> `overflow: "scroll"`, `<virtual-list>`, or `<diff>` must not. GPUI gives both
-> hitboxes the same wheel event, so the inner list steals the gesture.
->
-> Keep long inner content in that parent. Collapse it behind an **expandable**
-> (preview plus Show more) instead of giving the child its own viewport.
->
-> Horizontal overflow is the exception. `overflowX: "scroll"` on a wide child
-> (a code row, a table) does not steal the vertical wheel. GPUIX lays that
-> scroller out as a flex viewport with `minWidth: 0`. The wide child must not
-> shrink: set `flexShrink: 0` or a definite width. Swipe on **X** to pan.
-> A vertical wheel stays on the parent.
+Native scroll containers and virtual lists consume a wheel event when they
+move. A parent does not move on the same event. When the inner container is
+already at its boundary, the next event can move the parent. `onScroll` still
+receives the wheel event on the inner element and its ancestors. These callbacks
+report input, not a change in the scroll offset.
+
+Prefer one scroll parent for long documents. Inner content can grow with that
+parent or use an expandable preview. Use a bounded inner scroll container when
+it needs independent scrolling.
+
+`overflowX: "scroll"` on a wide child does not consume the vertical wheel.
+GPUIX gives it a flex viewport with `minWidth: 0`. Give the wide child
+`flexShrink: 0` or a definite width. A horizontal wheel pans the child; a
+vertical wheel stays on the parent.
 
 ```tsx
 function Expandable({
@@ -1363,7 +1364,7 @@ Each **direct host child** is one virtual row. Give every row a stable React key
 </virtual-list>
 ```
 
-A row can contain nested `<div>`, `<text>`, `<markdown>`, `<code>`, `<diff>`, `<input>`, and `<textarea>` elements. Focusable rows stay active when they move offscreen, so keyboard input and native editor state are preserved. Those children must not scroll. Nested scrolling is not supported; see [Scrolling](#scrolling).
+A row can contain nested `<div>`, `<text>`, `<markdown>`, `<code>`, `<diff>`, `<input>`, and `<textarea>` elements. Focusable rows stay active when they move offscreen, so keyboard input and native editor state are preserved. Use separate child scroll containers only when independent scrolling is needed; see [Scrolling](#scrolling).
 
 ### Chat tail behavior
 
@@ -3267,3 +3268,14 @@ Read the font bytes before mounting the app. Register them before the first text
 layout. The browser methods use the application's text system while graphics
 initialization is in progress; they do not wait for a window or repair layout
 with a timer. Measurement rejects non-finite or non-positive sizes and weights.
+
+### Native input and font test controls
+
+On macOS, set `GPUI_FONT_SMOOTHING=0` to disable font smoothing for the process,
+or `GPUI_FONT_SMOOTHING=1` to enable it. Set this before the first text rasterization.
+Other values use the existing OS preference. This does not change OS settings.
+
+Rust builds with `test-support` expose `Window::take_input_handler_for_tests()`
+and `Window::restore_input_handler_for_tests(handler)`. These let native IME tests
+call the installed platform input handler without activating a window. Restore
+the handler before the next input event. These methods are not JavaScript APIs.
