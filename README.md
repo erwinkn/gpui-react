@@ -3259,6 +3259,30 @@ See [AGENTS.md](https://github.com/remorses/gpuix/blob/main/AGENTS.md) for detai
 
 [Apache-2.0](https://github.com/remorses/gpuix/blob/main/LICENSE)
 
+## Shared fork runtime packages
+
+The `Fork runtime release` workflow builds and tests archives on this fork. It
+publishes them to GitHub Releases under `runtime-v<VERSION>`. It does not publish
+to the upstream npm scope. Each release contains:
+
+- `gpuix-native-<VERSION>.tgz`: the default macOS arm64 binding and browser WASM.
+- `gpuix-react-<VERSION>.tgz`: the React runtime, with its native dependency set
+  to the matching release URL.
+- `runtime-manifest.json`: source and GPUI commits, runtime API versions, and
+  SHA-256 hashes for both archives.
+
+Install the React archive by its release URL. The initial agreed version is
+`0.9.0-cherry.1`; the name is a version identifier, and the packages contain
+shared framework code. Other native platforms need their own composed binding.
+The browser runtime supports WebGPU and WebGL. Select consumer bindings through
+`@gpuix/native/runtime` before importing React or the application host.
+
+`bun scripts/package-runtime.ts <VERSION>` packs existing release builds for
+local inspection. `bun scripts/test-runtime-packages.ts <ARTIFACT_DIRECTORY>`
+checks isolated Node and Bun installs with both the default binding and the
+external composition fixture. Only CI publishes release assets. A release that
+already exists is never replaced by this workflow.
+
 ## Native horizontal scroll groups
 
 A `div` with `overflowX: "scroll"` may set `scrollGroup="table-id"`. All horizontal scroll containers with that name in the same renderer share a GPUI `ScrollHandle`. Give each member the same viewport and content width. Header, body rows, and footer then scroll in one native frame, without React state updates. Place frozen columns outside each grouped viewport, as GPUI's own data table does.

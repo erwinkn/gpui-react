@@ -14,7 +14,7 @@ async function run(command: string[]) {
   if (await child.exited !== 0) throw new Error(`${command[0]} failed`)
 }
 if (wasm) {
-  await run(["cargo", "+nightly", "build", "--release", "--no-default-features", "--target", "wasm32-unknown-unknown"])
+  await run(["cargo", "+nightly", "build", "--release", "--locked", "--no-default-features", "--target", "wasm32-unknown-unknown"])
   mkdirSync(resolve(directory, "wasm"), { recursive: true })
   await run(["wasm-bindgen", resolve(target, "wasm32-unknown-unknown/release/gpuix_extension_example.wasm"),
     "--target", "web", "--out-dir", resolve(directory, "wasm"), "--out-name", "example"])
