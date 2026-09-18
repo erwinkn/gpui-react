@@ -612,6 +612,14 @@ composition can inspect its installed set with `registered_extensions()`.
 
 ### Select the application composition
 
+Native extensions can render into a GPU texture and call
+`gpui::Window::paint_gpu_texture(bounds, texture, corner_radii)` during paint.
+Use the device and queue from `Window::gpu_context()`. GPUI composes
+premultiplied RGBA8 or RGBA16 float textures with inherited opacity, clipping,
+corner radii, and normal scene order. Shaders and animation state belong to the
+extension. See [GPU texture composition](./docs/gpu-textures.md) for the contract
+and current validation limits.
+
 Libraries declare `@gpuix/react` as a peer dependency. They do not import a native
 binary. The application selects one composition before importing React:
 
