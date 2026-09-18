@@ -68,6 +68,7 @@ pub struct SelectionState {
     /// Resolved spans in document order. Empty while a click has not moved.
     spans: Vec<Span>,
     active: bool,
+    pub geometry: Vec<super::paint::SelectedRun>,
     /// Mouse-down hit that has not become a drag yet. A tap must not select
     /// or blur; iOS treats that tap as scroll or focus. Promoted on the first
     /// dragging move, or replaced by `begin_with_span` for double-click.

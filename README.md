@@ -3102,3 +3102,17 @@ See [AGENTS.md](https://github.com/remorses/gpuix/blob/main/AGENTS.md) for detai
 ## License
 
 [Apache-2.0](https://github.com/remorses/gpuix/blob/main/LICENSE)
+
+## Native horizontal scroll groups
+
+A `div` with `overflowX: "scroll"` may set `scrollGroup="table-id"`. All horizontal scroll containers with that name in the same renderer share a GPUI `ScrollHandle`. Give each member the same viewport and content width. Header, body rows, and footer then scroll in one native frame, without React state updates. Place frozen columns outside each grouped viewport, as GPUI's own data table does.
+
+Groups are renderer-local and release their handle when their final member leaves the retained tree. Changing or removing a group detaches that member. The ordinary renderer scroll methods work on any member. Vertical-only containers now restrict scrolling to their declared axis, so horizontal wheel input does not also move the parent vertically.
+
+### Embedded frame timing
+
+`GpuixRenderer.setFrameCallback(callback)` wakes the macOS host at the display cadence. Pass `null` to unregister. The callback must yield back to the host event loop before calling `tick()`. Other platforms return `false`. `startFrameLoop` manages this and retains its timer fallback for input while a display link is stopped.
+
+For diagnostics, call `startFrameProfile(keepVisible?)`, send input without forcing automation draws, then parse `takeFrameProfile()`. It returns draw/submission timestamps, native view build times, and mutation batch sizes. It records no text. On macOS, `keepVisible: true` temporarily floats the first native window without pointer input and restores its prior level and input policy when capture ends. A scoped user-initiated activity prevents App Nap during the capture without preventing system sleep. These are CPU submission times, not proof of physical display presentation.
+
+The macOS embedded pump services AppKit once per host tick, with a four-millisecond cooperative event-drain budget. A count-only drain can keep finding new events while display callbacks run. The extra CFRunLoop pass has been removed because `nextEventMatchingMask` already services the run loop. Test-support builds expose `queueAppKitMouseMoves(count, x, y, deltaY)` for in-process AppKit input checks; it does not move the system pointer or send input to another app.

@@ -83,6 +83,8 @@ enum ImgSource {
 #[derive(Debug, Clone, Default)]
 pub struct ImgElement {
     source: ImgSource,
+    source_key: String,
+    error_reported: std::rc::Rc<std::cell::Cell<bool>>,
     object_fit: ImgObjectFit,
     alt: String,
 }
@@ -90,6 +92,8 @@ pub struct ImgElement {
 impl ImgElement {
     fn load_src(&mut self, src: &str) {
         let src = src.trim();
+        self.source_key = src.to_owned();
+        self.error_reported.set(false);
         self.source = if src.is_empty() {
             ImgSource::Empty
         } else if src.starts_with("data:") {
@@ -164,11 +168,8 @@ fn img_fallback(ctx: &CustomRenderContext, alt: &str, message: &str) -> gpui::An
             .text_color(gpui::rgba(0xa4accdff)),
         ctx,
     );
-    fallback = crate::accessibility::apply_accessibility(
-        fallback,
-        ctx.props,
-        Some(gpui::Role::Image),
-    );
+    fallback =
+        crate::accessibility::apply_accessibility(fallback, ctx.props, Some(gpui::Role::Image));
     fallback = crate::accessibility::apply_image_label(fallback, ctx.props, alt);
     fallback
         .child(ctx.chrome_text(message.to_string(), None))
@@ -184,6 +185,26 @@ impl CustomElement for ImgElement {
     ) -> gpui::AnyElement {
         use gpui::prelude::*;
 
+        let report_error = ctx.events.contains("change");
+        let reported = self.error_reported.clone();
+        let callback = ctx.event_callback.clone();
+        let id = ctx.id;
+        let source = self.source_key.clone();
+        let fail = move || {
+            if report_error && !reported.replace(true) {
+                crate::renderer::emit_event_full(&callback, id, "change", |p| {
+                    p.value=Some(serde_json::json!({"status":"error","src":source,"error":"The image could not be loaded."}).to_string())
+                });
+            }
+        };
+        if report_error && matches!(self.source, ImgSource::Empty | ImgSource::Invalid) {
+            fail();
+            return super::custom_surface(
+                gpui::div().id(gpui::SharedString::from(format!("image-error-{}", ctx.id))),
+                &ctx,
+            )
+            .into_any_element();
+        }
         let el = match &self.source {
             ImgSource::Path(path) => gpui::img(path.clone()),
             ImgSource::Uri(uri) => gpui::img(uri.clone()),
@@ -197,7 +218,11 @@ impl CustomElement for ImgElement {
         // never advances past frame zero.
         let mut el = el
             .object_fit(self.object_fit.as_gpui())
-            .with_fallback(|| {
+            .with_fallback(move || {
+                fail();
+                if report_error {
+                    return gpui::div().into_any_element();
+                }
                 gpui::div()
                     .flex()
                     .items_center()
@@ -253,7 +278,7 @@ impl CustomElement for ImgElement {
     }
 
     fn supported_events(&self) -> &'static [&'static str] {
-        &["click", "mouseEnter", "mouseLeave", "fileDrop"]
+        &["click", "mouseEnter", "mouseLeave", "fileDrop", "change"]
     }
 
     fn destroy(&mut self) {}

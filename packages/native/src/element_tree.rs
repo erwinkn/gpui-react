@@ -107,6 +107,9 @@ pub struct EventPayload {
     /// Exclusive end of the visible logical range. Populated for: visibleRange.
     pub end_index: Option<f64>,
 
+    /// Native follow-tail state after user scrolling. Absent on data-range requests.
+    pub is_following_tail: Option<bool>,
+
     /// Matches found by this element's `highlight` prop. Counted once per match
     /// even when it is split across several painted runs, and it counts every
     /// retained match, not only the ones currently on screen.
@@ -145,6 +148,7 @@ impl Default for EventPayload {
             new_line: None,
             start_index: None,
             end_index: None,
+            is_following_tail: None,
             match_count: None,
             paths: None,
             modifiers: None,

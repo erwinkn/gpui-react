@@ -142,6 +142,11 @@ const BUILT_IN_TYPES = new Set(["div", "text"])
 // Props that reach Rust on EVERY element type, including div and text.
 // Custom props are otherwise skipped for built-ins.
 const UNIVERSAL_PROPS = new Set([
+  "scrollGroup",
+  "inlineFlow",
+  "inlineAlign",
+  "preserveSelection",
+  "focusScope",
   "autoFocus",
   "tabIndex",
   "motion",
@@ -156,6 +161,13 @@ const UNIVERSAL_PROPS = new Set([
   "aria-id",
   "aria-expanded",
   "aria-selected",
+  "aria-checked",
+  "aria-pressed",
+  "aria-disabled",
+  "aria-modal",
+  "aria-valuenow",
+  "aria-valuemin",
+  "aria-valuemax",
   "aria-valuetext",
   "aria-level",
 ])

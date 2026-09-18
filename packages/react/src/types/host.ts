@@ -71,6 +71,7 @@ export type CursorValue =
   | "context-menu"
 
 export interface BoxShadow {
+  inset?: boolean
   offsetX: number
   offsetY: number
   blurRadius: number
@@ -93,6 +94,8 @@ export interface LinearGradientBackground {
 }
 
 export interface StyleDesc {
+  /** Native width/height ratio, used to reserve media layout before decode. */
+  aspectRatio?: number;
   display?: string
   visibility?: string
   flexDirection?: string
@@ -107,6 +110,10 @@ export interface StyleDesc {
   gap?: number
   rowGap?: number
   columnGap?: number
+  gridColumnStart?: number
+  gridColumnEnd?: number
+  gridRowStart?: number
+  gridRowEnd?: number
   gridTemplateColumns?: number
   gridTemplateRows?: number
   gridColumnMin?: "zero" | "min-content" | "max-content"
@@ -153,11 +160,13 @@ export interface StyleDesc {
   borderTopRightRadius?: number
   borderBottomLeftRadius?: number
   borderBottomRightRadius?: number
-  boxShadow?: BoxShadow
+  boxShadow?: BoxShadow | BoxShadow[]
 
   fontSize?: number
   fontFamily?: string
   fontWeight?: string | number
+  /** OpenType feature tags, for example { tnum: true } for tabular digits. */
+  fontFeatures?: Record<string, boolean | number>
   textAlign?: string
   lineHeight?: number
   whiteSpace?: "normal" | "nowrap"
@@ -183,6 +192,11 @@ export interface StyleDesc {
 
   // Pseudo-selector styles — applied by GPUI natively (no JS round-trip).
   // Nesting is one level deep: hover/active cannot contain hover/active.
+  /** Native hover group. Child groupHover styles need no JavaScript events. */
+  group?: string
+  groupHover?: { group: string; style: StyleDesc }
+  focus?: StyleDesc
+  focusVisible?: StyleDesc
   hover?: Omit<StyleDesc, "hover" | "active">
   active?: Omit<StyleDesc, "hover" | "active">
 }
@@ -370,6 +384,17 @@ export interface HighlightMatch {
 // Element IDs are auto-generated numeric IDs (not user-settable).
 // Use React refs to get an element's ID: ref.current.id
 export interface Props {
+  /** Native paragraph flow: direct text children wrap beside atomic child controls. */
+  inlineFlow?: boolean
+  /** Alignment of an atomic child within its inlineFlow line box. */
+  inlineAlign?: "baseline" | "middle" | "top" | "bottom"
+  /** Keep document selection while using a toolbar. */
+  preserveSelection?: boolean
+  /** Keep focusNext/focusPrevious within this subtree while a descendant has focus. */
+  focusScope?: boolean
+
+  /** Share a native horizontal ScrollHandle. Members need equal viewport/content widths. */
+  scrollGroup?: string;
   // `key` must live here, not in `JSX.IntrinsicAttributes`. TypeScript 5 ignores
   // that member for intrinsic elements, and React's DOM types work only because
   // `DetailedHTMLProps` already carries `key`. Without this field every
@@ -449,6 +474,13 @@ export interface Props {
   /** Author id exposed as `AXIdentifier` / UIA AutomationId. */
   "aria-id"?: string
   "aria-expanded"?: boolean
+  "aria-checked"?: boolean | "mixed"
+  "aria-pressed"?: boolean | "mixed"
+  "aria-disabled"?: boolean
+  "aria-modal"?: boolean
+  "aria-valuenow"?: number
+  "aria-valuemin"?: number
+  "aria-valuemax"?: number
   "aria-selected"?: boolean
   /** String value reported to assistive technology. */
   "aria-valuetext"?: string
@@ -462,6 +494,8 @@ export interface Props {
 
 // Props for native text editor elements.
 export interface InputProps extends Props {
+  /** Capture unmodified keys before native editor actions, for an open autocomplete menu. IME composition is not intercepted. */
+  captureKeys?: Array<"up" | "down" | "tab" | "escape">
   /** External editor value. Native edits apply immediately and report through onChange. */
   value?: string
   placeholder?: string
@@ -484,6 +518,8 @@ type VirtualListShared = {
   ref?: React.Ref<PublicInstance>
   alignment?: "top" | "bottom"
   followTail?: boolean
+  /** Commit a new anchor with its row window before native layout. Change revision to repeat a jump. */
+  scrollTo?: { index: number; offset?: number; revision?: string | number }
   overdraw?: number
   onVisibleRange?: (event: EventPayload) => void
   role?: string
@@ -585,6 +621,12 @@ export interface MarkdownProps extends Props {
 
 // Props for the <anchored> custom element.
 export interface AnchoredProps extends Props {
+  /** Match the current containing block width, without JavaScript bounds polling. For top/bottom menus. */
+  matchWidth?: boolean
+  /** Native current-frame anchor below the selected text; hidden without a visible selection. */
+  selectionAnchor?: boolean
+  /** Restrict a selection-relative layer to this native text element. */
+  selectionElement?: number
   position?: { x: number; y: number }
   side?: "top" | "right" | "bottom" | "left"
   align?: "start" | "center" | "end"
@@ -619,6 +661,10 @@ export interface NativeRenderer {
   applyBatch(json: string): Array<number>
 
   // ── Focus API ──────────────────────────────────────────────────
+  /** Batch widths from the native font shaper, before first layout. */
+  registerFonts?(fonts: Uint8Array[]): void
+  highlightCode?(source: string, path?: string, language?: string): Array<Array<{text: string; kind: string; start: number; end: number}>>
+  measureTextWidths?(family: string, size: number, weight: number, texts: string[]): number[]
   focusElement?(elementId: number): void
   focusNext?(): void
   focusPrevious?(): void
@@ -654,6 +700,7 @@ export interface NativeRenderer {
   // ── Selection API ──────────────────────────────────────────────
   /** The current text selection joined in document order, or null. */
   getSelectedText?(): string | null
+  getSelectionInfo?(): string
   /** Drop the current selection. */
   clearSelection?(): void
 

@@ -30,6 +30,7 @@ gpui = { path = "../../zed/crates/gpui", default-features = false, features = ["
 thiserror = "2"
 pulldown-cmark = { version = "0.12", default-features = false }
 unicode-segmentation = "1"
+unicode-linebreak = "0.1"
 web-time = "1"
 
 # Syntect compiles a grammar's TextMate regexes lazily, on the FIRST highlight
@@ -78,6 +79,9 @@ web-sys = { version = "0.3", features = ["Navigator", "Window"] }
 # macOS text/graphics deps - pinned to avoid core-graphics version conflicts
 # core-text 21.1.0 uses core-graphics 0.25 which conflicts with font-kit's core-graphics 0.24
 [target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
+core-video = "0.5.2"
+core-foundation = "0.10"
 core-text = "=21.0.0"
 core-graphics = "=0.24.0"
 tar = "0.4"

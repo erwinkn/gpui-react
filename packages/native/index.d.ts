@@ -49,6 +49,14 @@ export declare class GpuixRenderer {
    * Acquires the tree mutex ONCE for the entire batch.
    */
   applyBatch(json: string): Array<number>
+  /** Wake the embedded macOS pump at display cadence. Null unregisters. Other platforms return false. */
+  setFrameCallback(callback: ((err: Error | null) => void) | null): boolean
+  /** Start opt-in draw/submission timing. keepVisible temporarily floats the first native window without pointer input and prevents App Nap during capture. */
+  startFrameProfile(keepVisible?: boolean | null): void
+  /** Test support, macOS: queue motion in this app only. Does not move the system pointer. */
+  queueAppKitMouseMoves(count: number, x: number, y: number, deltaY: number): void
+  /** End timing, restore visibility/tracing, and return JSON timestamps. No message content is recorded. */
+  takeFrameProfile(): string
   /** Pump the native event loop. Returns false after the last window closes. */
   tick(): boolean
   isInitialized(): boolean
@@ -101,6 +109,8 @@ export declare class GpuixRenderer {
   setWindowSelectionChange(enabled: boolean, eventId: number): void
   /** The current text selection joined in document order, or null. */
   getSelectedText(): string | null
+  /** Current-frame visible selected ranges, UTF-16 offsets and window rectangles as JSON. */
+  getSelectionInfo(): string
   /** Drop the current selection and request a repaint. */
   clearSelection(): void
   /**
@@ -270,6 +280,8 @@ export declare class TestGpuixRenderer {
   simulateFileDrop(x: number, y: number, paths: Array<string>): void
   /** The current text selection joined in document order, or null. */
   getSelectedText(): string | null
+  /** Current-frame visible selected ranges, UTF-16 offsets and window rectangles as JSON. */
+  getSelectionInfo(): string
   /** Drop the current selection. */
   clearSelection(): void
   /**
@@ -530,6 +542,8 @@ export interface EventPayload {
   startIndex?: number
   /** Exclusive end of the visible logical range. Populated for: visibleRange. */
   endIndex?: number
+  /** Native follow-tail state after user scrolling. Absent on data-range requests. */
+  isFollowingTail?: boolean
   /**
    * Matches found by this element's `highlight` prop. Counted once per match
    * even when it is split across several painted runs, and it counts every

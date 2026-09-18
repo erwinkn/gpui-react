@@ -83,8 +83,7 @@ export function createRenderer(
   return renderer
 }
 
-/** ~125fps. Above any common display refresh rate, so frames are never the
- *  bottleneck, while still leaving the Node event loop almost entirely idle. */
+/** Maximum delay between embedded event pumps when no display signal arrives. */
 const DEFAULT_FRAME_MS = 8
 
 export interface FrameLoop {
@@ -112,6 +111,10 @@ export function enableAutomation(renderer: LiveAutomationRenderer): void {
  * the event loop here, so a blocking tick would stall every timer, promise and
  * socket in the process.
  *
+ * A macOS display signal also wakes the pump. The timer remains as a fallback
+ * for AppKit input while display links are stopped (for example, occlusion).
+ * The callback yields out of the host dispatch queue before pumping AppKit.
+ *
  * Each frame is scheduled only after the previous one finishes, so a slow frame
  * delays the next one instead of letting timers pile up.
  *
@@ -125,7 +128,7 @@ export function enableAutomation(renderer: LiveAutomationRenderer): void {
  * AppKit pump; if it dies the window freezes while bun may still be alive.
  */
 export function startFrameLoop(
-  renderer: Pick<GpuixRenderer, "requiresTick" | "tick">,
+  renderer: Pick<GpuixRenderer, "requiresTick" | "tick"> & { setFrameCallback?: (callback: ((error?: Error | null) => void) | null) => boolean },
   options: { frameMs?: number; onTerminated?: () => void } = {}
 ): FrameLoop {
   if (!renderer.requiresTick()) {
@@ -135,15 +138,19 @@ export function startFrameLoop(
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   let timer: ReturnType<typeof setTimeout> | null = null
   let stopped = false
+  let displayDriven = false
 
   const stop = (): void => {
     stopped = true
     if (timer !== null) clearTimeout(timer)
     timer = null
+    if (displayDriven) renderer.setFrameCallback?.(null)
   }
 
   const loop = (): void => {
     if (stopped) return
+    if (timer !== null) clearTimeout(timer)
+    timer = null
     const started = performance.now()
     let running = true
     try {
@@ -159,6 +166,15 @@ export function startFrameLoop(
     const wait = Math.max(0, frameMs - (performance.now() - started))
     timer = setTimeout(loop, wait)
   }
+  displayDriven = renderer.setFrameCallback?.((error) => {
+    if (error) scheduleRuntimeError(error)
+    else if (!stopped) {
+      // A N-API callback can itself run inside the main dispatch queue. Yield
+      // to the host loop before pumping AppKit so its frame source can run.
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(loop, 0)
+    }
+  }) ?? false
   loop()
 
   return { stop }

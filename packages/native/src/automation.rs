@@ -69,6 +69,65 @@ pub fn track_own_bounds<E: gpui::InteractiveElement>(el: E, id: u64) -> E {
     el.on_painted(move |bounds, _, _| record_bounds(id, bounds))
 }
 
+/// Preserve a custom element's exact layout while recording its painted bounds.
+/// GPUI List stores Interactivity but does not run its paint listeners.
+pub fn track_element_bounds(inner: gpui::AnyElement, id: u64) -> gpui::AnyElement {
+    TrackedElement { inner, id }.into_any_element()
+}
+struct TrackedElement {
+    inner: gpui::AnyElement,
+    id: u64,
+}
+impl IntoElement for TrackedElement {
+    type Element = Self;
+    fn into_element(self) -> Self {
+        self
+    }
+}
+impl gpui::Element for TrackedElement {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+    fn id(&self) -> Option<gpui::ElementId> {
+        None
+    }
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+    fn request_layout(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (gpui::LayoutId, ()) {
+        (self.inner.request_layout(window, cx), ())
+    }
+    fn prepaint(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        _: Bounds<Pixels>,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.inner.prepaint(window, cx);
+    }
+    fn paint(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _: &mut (),
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        record_bounds(self.id, bounds);
+        self.inner.paint(window, cx);
+    }
+}
+
 pub fn record_bounds(id: u64, bounds: Bounds<Pixels>) {
     BOUNDS.with(|cell| {
         cell.borrow_mut()
@@ -95,6 +154,8 @@ pub fn bounds_tracker(id: u64, selection_start: Option<bool>) -> impl IntoElemen
         },
     )
     .absolute()
+    .top_0()
+    .left_0()
     .size_full()
 }
 

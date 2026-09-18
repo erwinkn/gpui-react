@@ -266,6 +266,7 @@ impl TestGpuixRenderer {
         // that get_a11y_tree can dump.
         cx.update_window(window, |_, window, _| {
             window.set_a11y_active_for_tests(true);
+            window.set_logical_active_for_tests(true);
         })
         .map_err(|e| Error::from_reason(e.to_string()))?;
         cx.run_until_parked();
@@ -298,6 +299,28 @@ impl TestGpuixRenderer {
     pub fn apply_batch(&self, json: String) -> Result<Vec<f64>> {
         let mut tree = self.tree.lock().unwrap();
         apply_batch_to_tree(&mut tree, json.as_bytes()).map_err(Error::from_reason)
+    }
+
+    /// Register private application fonts before the first text layout.
+    #[napi]
+    pub fn register_fonts(&self, fonts:Vec<napi::bindgen_prelude::Buffer>)->Result<()> {
+        let fonts=fonts.into_iter().map(|bytes|std::borrow::Cow::Owned(bytes.to_vec())).collect();
+        with_test_state(|cx,window,_|cx.update_window(window,|_,window,_|window.text_system().add_fonts(fonts)).map_err(|e|Error::from_reason(e.to_string()))?.map_err(|e|Error::from_reason(e.to_string())))
+    }
+
+    /// Cached syntax tokens with line-relative UTF-16 offsets for React views.
+    #[napi]
+    pub fn highlight_code(&self, source:String, path:Option<String>, language:Option<String>)->Vec<Vec<crate::syntax_api::SyntaxToken>> {
+        crate::syntax_api::tokens(&source,path.as_deref(),language.as_deref())
+    }
+
+    /// Batch native font measurements for data-dependent cell layouts.
+    #[napi]
+    pub fn measure_text_widths(&self, family: String, size: f64, weight: f64, texts: Vec<String>) -> Result<Vec<f64>> {
+        if !size.is_finite() || size <= 0.0 || !weight.is_finite() || weight <= 0.0 {
+            return Err(Error::from_reason("Text size and weight must be finite and positive"));
+        }
+        with_test_state(|cx, window, _| cx.update_window(window, |_, window, _| crate::text_measure::widths(window, family, size, weight, texts)).map_err(|e| Error::from_reason(e.to_string())))
     }
 
     // ── Test-specific methods ────────────────────────────────────────
@@ -479,8 +502,9 @@ impl TestGpuixRenderer {
 
     #[napi]
     pub fn focus_next(&self) -> Result<()> {
-        with_test_state(|cx, window, _view| {
-            cx.update_window(window, |_, window, app| window.focus_next(app))
+        with_test_state(|cx, window, view| {
+            let view=view.clone();
+            cx.update_window(window, |_, window, app| view.update(app, |view,cx|view.focus_scoped(true,window,cx)))
                 .map_err(|error| Error::from_reason(error.to_string()))?;
             cx.run_until_parked();
             Ok(())
@@ -489,8 +513,9 @@ impl TestGpuixRenderer {
 
     #[napi]
     pub fn focus_previous(&self) -> Result<()> {
-        with_test_state(|cx, window, _view| {
-            cx.update_window(window, |_, window, app| window.focus_prev(app))
+        with_test_state(|cx, window, view| {
+            let view=view.clone();
+            cx.update_window(window, |_, window, app| view.update(app, |view,cx|view.focus_scoped(false,window,cx)))
                 .map_err(|error| Error::from_reason(error.to_string()))?;
             cx.run_until_parked();
             Ok(())
@@ -694,6 +719,12 @@ impl TestGpuixRenderer {
     #[napi]
     pub fn get_selected_text(&self) -> Option<String> {
         self.selection.lock().selected_text()
+    }
+
+    /// Selected text plus current visible range geometry, in window pixels.
+    #[napi]
+    pub fn get_selection_info(&self) -> String {
+        crate::text::paint::selection_info(&self.selection)
     }
 
     /// Drop the current selection.

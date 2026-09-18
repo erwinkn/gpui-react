@@ -13,7 +13,7 @@
 import fs from "fs"
 import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import React, { useState, useRef } from "react"
 import { createTestRoot, hasNativeTestRenderer } from "../testing"
 import { startFrameLoop } from "../reconciler/renderer.js"
@@ -25,6 +25,32 @@ import { expectScreenshotsDiffer, SHOTS_DIR } from "./test-utils"
 const describeNative = hasNativeTestRenderer ? describe : describe.skip
 
 describe("frame loop", () => {
+  it("yields display callbacks, coalesces pending wakes, and unregisters on stop", () => {
+    vi.useFakeTimers()
+    let wake: ((error?: Error | null) => void) | null = null
+    let ticks = 0
+    const loop = startFrameLoop({
+      requiresTick: () => true,
+      setFrameCallback: callback => { wake = callback; return true },
+      tick: () => { ticks++; return true },
+    })
+    try {
+      expect(ticks).toBe(1)
+      const callback = wake!
+      callback(); callback(); callback()
+      expect(ticks).toBe(1)
+      vi.advanceTimersByTime(1)
+      expect(ticks).toBe(2)
+      vi.advanceTimersByTime(8)
+      expect(ticks).toBe(3) // fallback still pumps AppKit without a display wake
+      loop.stop()
+      expect(wake).toBeNull()
+      callback()
+      vi.advanceTimersByTime(100)
+      expect(ticks).toBe(3)
+    } finally { loop.stop(); vi.useRealTimers() }
+  })
+
   it.skipIf(process.platform !== "darwin")(
     "returns control to JavaScript while AppKit is idle",
     () => {

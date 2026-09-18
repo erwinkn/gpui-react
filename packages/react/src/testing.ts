@@ -85,6 +85,7 @@ interface NativeTestRendererApi extends NativeRenderer {
   getDebugFrameOverlayStats(): DebugFrameOverlayStats
   dragSelect(x1: number, y1: number, x2: number, y2: number): void
   getSelectedText(): string | null
+  getSelectionInfo(): string
   getPaintedText(): string[]
   getPaintedHighlights(): HighlightMatch[]
   getSyntaxCacheStats(): number[]
@@ -469,6 +470,16 @@ export class TestRenderer implements NativeRenderer {
     return this.native.getRetainedElementCount()
   }
 
+  registerFonts(fonts:Uint8Array[]):void { (this.native as any).registerFonts(fonts) }
+
+  highlightCode(source:string,path?:string,language?:string):Array<Array<{text:string;kind:string;start:number;end:number}>> {
+    return (this.native as any).highlightCode(source,path,language)
+  }
+
+  measureTextWidths(family: string, size: number, weight: number, texts: string[]): number[] {
+    return this.native.measureTextWidths!(family, size, weight, texts)
+  }
+
   getElementBounds(elementId: number): ElementBounds | null {
     return this.native.getElementBounds(elementId)
   }
@@ -580,6 +591,8 @@ export class TestRenderer implements NativeRenderer {
     this.native.dragSelect(x1, y1, x2, y2)
     return this.native.getSelectedText()
   }
+
+  getSelectionInfo(): string { return this.native.getSelectionInfo() }
 
   /** The current selection joined in document order, or null. */
   getSelectedText(): string | null {

@@ -54,6 +54,28 @@ where
     if let Some(selected) = bool_prop(props, "aria-selected") {
         el = el.aria_selected(selected);
     }
+    if let Some(disabled) = bool_prop(props, "aria-disabled") { el = el.aria_disabled(disabled); }
+    if let Some(modal) = bool_prop(props, "aria-modal") { el = el.aria_modal(modal); }
+    for key in ["aria-checked", "aria-pressed"] {
+        if let Some(value) = props.get(key) {
+            let toggled = match value {
+                serde_json::Value::Bool(true) => Some(gpui::Toggled::True),
+                serde_json::Value::Bool(false) => Some(gpui::Toggled::False),
+                serde_json::Value::String(s) if s == "mixed" => Some(gpui::Toggled::Mixed),
+                _ => None,
+            };
+            if let Some(toggled) = toggled { el = el.aria_toggled(toggled); }
+        }
+    }
+    for key in ["aria-valuenow", "aria-valuemin", "aria-valuemax"] {
+        if let Some(value) = props.get(key).and_then(|v| v.as_f64()).filter(|v| v.is_finite()) {
+            el = match key {
+                "aria-valuenow" => el.aria_numeric_value(value),
+                "aria-valuemin" => el.aria_min_numeric_value(value),
+                _ => el.aria_max_numeric_value(value),
+            };
+        }
+    }
     if let Some(level) = usize_prop(props, "aria-level") {
         el = el.aria_level(level);
     }

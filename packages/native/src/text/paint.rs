@@ -34,6 +34,16 @@ use super::selection::{self, SelectionState};
 /// always uncontended.
 pub type SharedSelection = Arc<Mutex<SelectionState>>;
 
+#[derive(Clone, Debug)]
+pub struct SelectedRun {
+    pub element_id: u64,
+    pub sub: usize,
+    pub text: String,
+    pub start: usize,
+    pub end: usize,
+    pub rects: Vec<(f32, f32, f32, f32)>,
+}
+
 /// One painted text element, registered per frame in document order.
 struct RegEntry {
     key: Arc<str>,
@@ -94,8 +104,11 @@ pub fn selection_frame_reset(
     on_drag_move: impl Fn(gpui::Point<gpui::Pixels>, &mut gpui::App) + 'static,
     on_drag_end: impl Fn(&mut gpui::App) + 'static,
 ) -> impl IntoElement {
+    let for_layout = selection.clone();
     canvas(
-        |_, _, _| (),
+        move |_, _, _| {
+            for_layout.lock().geometry.clear();
+        },
         move |_, _, window, _| {
             REGISTRY.with(|r| r.borrow_mut().clear());
             START_REGIONS.with(|r| r.borrow_mut().clear());
@@ -219,6 +232,8 @@ pub struct SelectableText {
     /// that must never merge with its neighbour, which is every custom element.
     pub group: Option<u64>,
     pub highlight: Option<HighlightSource>,
+    /// A controlled caret anchor for an empty replacement; it paints no selection wash.
+    pub anchor_caret: Option<usize>,
 }
 
 impl SelectableText {
@@ -243,6 +258,7 @@ impl SelectableText {
             selectable: true,
             group: None,
             highlight: None,
+            anchor_caret: None,
         }
     }
 }
@@ -263,6 +279,7 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
         selectable,
         group,
         highlight,
+        anchor_caret,
     } = opts;
     let key = selection_key(element_id, sub);
 
@@ -272,6 +289,10 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
     };
     let layout = styled.layout().clone();
 
+    let geometry_layout = layout.clone();
+    let geometry_selection = selection.clone();
+    let geometry_key = key.clone();
+    let geometry_text = text.clone();
     let underlay = canvas(
         |_, _, _| (),
         move |_, _, window, _| {
@@ -328,6 +349,52 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
         .relative()
         .child(underlay)
         .child(styled)
+        // Runs after the text's prepaint, before deferred selection overlays.
+        // This makes a font/spacing change and toolbar placement one frame.
+        .child(
+            canvas(
+                move |_, window, _| {
+                    let mut state = geometry_selection.lock();
+                    if let Some(range) = selectable
+                        .then(|| state.wash_range(&geometry_key).or_else(|| anchor_caret.map(|i|i..i)))
+                        .flatten()
+                    {
+                        let clip = window.content_mask().bounds;
+                        let measured = if range.is_empty() {
+                            let position = geometry_layout.position_for_index(range.start).unwrap_or(geometry_layout.bounds().origin);
+                            vec![Bounds::new(position, size(px(1.0),geometry_layout.line_height()))]
+                        } else { range_rects(&geometry_layout, &range, 0.0, 0.0) };
+                        let rects: Vec<_> = measured.iter()
+                            .map(|r| r.intersect(&clip))
+                            .filter(|r| r.size.width > px(0.0) && r.size.height > px(0.0))
+                            .collect();
+                        if !rects.is_empty() {
+                            state.geometry.push(SelectedRun {
+                                element_id,
+                                sub,
+                                text: geometry_text.to_string(),
+                                start: utf16_offset(&geometry_text, range.start),
+                                end: utf16_offset(&geometry_text, range.end),
+                                rects: rects
+                                    .iter()
+                                    .map(|r| {
+                                        (
+                                            f32::from(r.origin.x),
+                                            f32::from(r.origin.y),
+                                            f32::from(r.size.width),
+                                            f32::from(r.size.height),
+                                        )
+                                    })
+                                    .collect(),
+                            });
+                        }
+                    }
+                },
+                |_, _, _, _| (),
+            )
+            .absolute()
+            .size_full(),
+        )
         .into_any_element()
 }
 
@@ -786,4 +853,17 @@ mod tests {
         assert_eq!(rects[1].origin, point(px(0.0), px(22.0)));
         assert_eq!(rects[1].size, size(px(40.0), px(22.0)));
     }
+}
+
+/// JSON snapshot keeps this additive API identical in real and test renderers.
+pub fn selection_info(selection: &SharedSelection) -> String {
+    let state = selection.lock();
+    serde_json::json!({
+        "text": state.selected_text(),
+        "ranges": state.geometry.iter().map(|r| serde_json::json!({
+            "elementId": r.element_id, "sub": r.sub, "text": r.text,
+            "start": r.start, "end": r.end,
+            "rects": r.rects.iter().map(|&(x,y,width,height)| serde_json::json!({"x":x,"y":y,"width":width,"height":height})).collect::<Vec<_>>()
+        })).collect::<Vec<_>>()
+    }).to_string()
 }

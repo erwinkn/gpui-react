@@ -72,6 +72,59 @@ function DynamicFocusableRows({ enabled }: { enabled: boolean }) {
 }
 
 describe("<virtual-list>", () => {
+  it("reports native tail-follow state with user scroll events", () => {
+    const { render, renderer } = createTestRoot()
+    const following: boolean[] = []
+    render(<virtual-list followTail onVisibleRange={(event) => {
+      if (typeof event.isFollowingTail === "boolean") following.push(event.isFollowingTail)
+    }} estimatedItemHeight={40} style={{ width: 400, height: 160 }}><Rows count={20} /></virtual-list>)
+    renderer.nativeSimulateScrollWheel(100, 80, 0, 100)
+    expect(following.at(-1)).toBe(false)
+    const list = renderer.findByType("virtual-list")[0]
+    renderer.scrollToItem(list.id, Number.MAX_SAFE_INTEGER)
+    renderer.nativeSimulateScrollWheel(100, 80, 0, -10)
+    expect(following.at(-1)).toBe(true)
+  })
+
+  it("keeps a distant reader anchor when a windowed history grows", () => {
+    const { render, renderer } = createTestRoot()
+    const history = (count: number) => (
+      <virtual-list itemCount={count} windowStart={24995} followTail
+        estimatedItemHeight={40} overdraw={0} style={{ width: 400, height: 160 }}>
+        {Array.from({ length: 12 }, (_, i) => (
+          <div key={i} style={{ height: 40, flexShrink: 0 }}><text>{`body-${24995 + i}`}</text></div>
+        ))}
+      </virtual-list>
+    )
+    render(history(50000))
+    const list = renderer.findByType("virtual-list")[0]
+    renderer.scrollToItem(list.id, 25000, 12)
+    expect(renderer.getPaintedText()).toContain("body-25000")
+    const before = renderer.getListScrollTop(list.id)
+    render(history(50002))
+    expect(renderer.getListScrollTop(list.id)).toEqual(before)
+    expect(renderer.getPaintedText()).toContain("body-25000")
+  })
+
+  it("follows appended rows after a windowed history resumes Latest", () => {
+    const { render, renderer } = createTestRoot()
+    const history = (count: number) => (
+      <virtual-list itemCount={count} windowStart={49990} followTail
+        estimatedItemHeight={40} overdraw={0} style={{ width: 400, height: 160 }}>
+        {Array.from({ length: count - 49990 }, (_, i) => (
+          <div key={i} style={{ height: 40, flexShrink: 0 }}><text>{`body-${49990 + i}`}</text></div>
+        ))}
+      </virtual-list>
+    )
+    render(history(50000))
+    const list = renderer.findByType("virtual-list")[0]
+    renderer.scrollToItem(list.id, 49990)
+    renderer.scrollToItem(list.id, Number.MAX_SAFE_INTEGER)
+    render(history(50002))
+    expect(renderer.getPaintedText()).toContain("body-50001")
+    expect(renderer.getPaintedText()).not.toContain("body-49990")
+  })
+
   it("builds and paints only rows near the viewport", () => {
     const { render, renderer } = createTestRoot()
     render(
@@ -295,6 +348,28 @@ describe("<virtual-list>", () => {
     renderer.scrollToItem(list.id, 50)
     expect(renderer.getPaintedText()).toContain("row-50")
     expect(renderer.getPaintedText()).not.toContain("row-0")
+  })
+
+  it("requests missing rows after a pixel scroll beyond the mounted window", () => {
+    const { render, renderer, unmount } = createTestRoot()
+    function Windowed() {
+      const [start, setStart] = React.useState(0)
+      return <virtual-list itemCount={1000} windowStart={start} estimatedItemHeight={40}
+        overdraw={0} style={{ width: 400, height: 160 }}
+        onVisibleRange={event => setStart(Math.min(992, Math.floor(event.startIndex ?? 0)))}>
+        {Array.from({ length: 8 }, (_, offset) => <div key={start + offset} style={{height: 40, flexShrink: 0}}>
+          <text>{`row-${start + offset}`}</text>
+        </div>)}
+      </virtual-list>
+    }
+    render(<Windowed />)
+    const list = renderer.findByType("virtual-list")[0]
+    renderer.scrollTo(list.id, 0, -20_000)
+    renderer.dispatchNativeEvents()
+    renderer.flush()
+    expect(renderer.getPaintedText()).toContain("row-500")
+    expect(renderer.findByType("virtual-list")[0].children).toHaveLength(8)
+    unmount()
   })
 
   it("ignores itemCount when estimatedItemHeight is missing", () => {

@@ -309,6 +309,7 @@ struct TextEditorElement {
     read_only: bool,
     min_rows: usize,
     max_rows: usize,
+    capture_keys: Vec<String>,
     last_prop_value: Option<String>,
     theme: Theme,
     state: Option<Entity<TextEditorState>>,
@@ -321,6 +322,7 @@ impl TextEditorElement {
             value: String::new(),
             placeholder: String::new(),
             read_only: false,
+            capture_keys: Vec::new(),
             min_rows: 1,
             max_rows: if multiline { 10 } else { 1 },
             last_prop_value: None,
@@ -356,6 +358,7 @@ impl CustomElement for TextEditorElement {
                 let read_only = self.read_only;
                 let min_rows = self.min_rows;
                 let max_rows = self.max_rows;
+                let capture_keys = self.capture_keys.clone();
                 let caret_color = self.theme.caret;
                 let callback = callback.clone();
                 let id = ctx.id;
@@ -375,6 +378,7 @@ impl CustomElement for TextEditorElement {
                     read_only,
                     min_rows,
                     max_rows,
+                    capture_keys,
                     selected_range: cursor..cursor,
                     selection_reversed: false,
                     marked_range: None,
@@ -410,6 +414,10 @@ impl CustomElement for TextEditorElement {
             state.emits_change = emits_change;
             if state.emits_submit != emits_submit {
                 state.emits_submit = emits_submit;
+                cx.notify();
+            }
+            if state.capture_keys != self.capture_keys {
+                state.capture_keys = self.capture_keys.clone();
                 cx.notify();
             }
             state.emits_key_down = emits_key_down;
@@ -496,20 +504,11 @@ impl CustomElement for TextEditorElement {
             let callback = ctx.event_callback.clone();
             let id = ctx.id;
             editor = editor.on_drop(move |dropped: &gpui::ExternalPaths, window, _cx| {
-                crate::renderer::emit_file_drop(
-                    &callback,
-                    id,
-                    dropped,
-                    window.mouse_position(),
-                );
+                crate::renderer::emit_file_drop(&callback, id, dropped, window.mouse_position());
             });
         }
-        editor = crate::accessibility::apply_a11y_click(
-            editor,
-            ctx.events,
-            ctx.id,
-            ctx.event_callback,
-        );
+        editor =
+            crate::accessibility::apply_a11y_click(editor, ctx.events, ctx.id, ctx.event_callback);
         editor.into_any_element()
     }
 
@@ -518,6 +517,16 @@ impl CustomElement for TextEditorElement {
             "value" => self.value = value.as_str().unwrap_or_default().to_string(),
             "placeholder" => self.placeholder = value.as_str().unwrap_or_default().to_string(),
             "readOnly" => self.read_only = value.as_bool().unwrap_or(false),
+            "captureKeys" => {
+                self.capture_keys = value
+                    .as_array()
+                    .map(|keys| {
+                        keys.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
             "minRows" => self.min_rows = value.as_u64().unwrap_or(1) as usize,
             "maxRows" => {
                 self.max_rows = value
@@ -535,6 +544,7 @@ impl CustomElement for TextEditorElement {
             "value",
             "placeholder",
             "readOnly",
+            "captureKeys",
             "minRows",
             "maxRows",
             "theme",
@@ -646,6 +656,7 @@ struct TextEditorState {
     read_only: bool,
     min_rows: usize,
     max_rows: usize,
+    capture_keys: Vec<String>,
     selected_range: Range<usize>,
     selection_reversed: bool,
     marked_range: Option<Range<usize>>,
@@ -922,13 +933,30 @@ impl TextEditorState {
         self.move_to(offset, cx);
     }
 
+    fn capture_navigation_key(&self, key: &str) -> bool {
+        if self.marked_range.is_some() || !self.capture_keys.iter().any(|k| k == key) {
+            return false;
+        }
+        emit_event_full(&self.callback, self.element_id, "keyDown", |payload| {
+            payload.key = Some(key.to_string());
+            payload.modifiers = Some(gpui::Modifiers::default().into());
+        });
+        true
+    }
+
     fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
+        if self.capture_navigation_key("up") {
+            return;
+        }
         if let Some(offset) = self.vertical_target(-1.0) {
             self.move_to(offset, cx);
         }
     }
 
     fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
+        if self.capture_navigation_key("down") {
+            return;
+        }
         if let Some(offset) = self.vertical_target(1.0) {
             self.move_to(offset, cx);
         }
@@ -1652,7 +1680,30 @@ impl gpui::Render for TextEditorState {
         let key_down_callback = self.callback.clone();
         let key_up_callback = self.callback.clone();
         let element_id = self.element_id;
+        let capture_keys = if self.marked_range.is_none() {
+            self.capture_keys.clone()
+        } else {
+            Vec::new()
+        };
+        let capture_callback = self.callback.clone();
         div()
+            .capture_key_down(move |event, window, cx| {
+                // The host declares keys while an autocomplete menu is open.
+                // Unbound keys use capture; bound Up/Down use their action handlers.
+                // IME and modified selection keys stay native.
+                if event.keystroke.modifiers == gpui::Modifiers::default()
+                    && capture_keys.contains(&event.keystroke.key)
+                {
+                    emit_event_full(&capture_callback, element_id, "keyDown", |payload| {
+                        payload.key = Some(event.keystroke.key.clone());
+                        payload.key_char = event.keystroke.key_char.clone();
+                        payload.is_held = Some(event.is_held);
+                        payload.modifiers = Some(event.keystroke.modifiers.into());
+                    });
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+            })
             .key_context(if !self.multiline {
                 INPUT_KEY_CONTEXT
             } else if self.emits_submit {

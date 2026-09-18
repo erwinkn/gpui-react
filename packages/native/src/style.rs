@@ -1,6 +1,14 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Font weight value — accepts both CSS strings ("bold", "700") and numbers (700).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FontFeatureValue { Flag(bool), Number(u32) }
+pub type FontFeatureMap = std::collections::BTreeMap<String, FontFeatureValue>;
+pub(crate) fn font_features(values: &FontFeatureMap) -> gpui::FontFeatures {
+    gpui::FontFeatures(std::sync::Arc::new(values.iter().filter(|(tag,_)|tag.len()==4 && tag.is_ascii()).map(|(tag,value)|(tag.clone(),match value {FontFeatureValue::Flag(v)=>u32::from(*v),FontFeatureValue::Number(v)=>*v})).collect()))
+}
+
 /// JS style objects commonly use both `fontWeight: "bold"` and `fontWeight: 700`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -17,6 +25,15 @@ pub struct BoxShadowValue {
     pub blur_radius: f64,
     pub spread_radius: f64,
     pub color: String,
+    #[serde(default)]
+    pub inset: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BoxShadowStack { One(BoxShadowValue), Many(Vec<BoxShadowValue>) }
+impl BoxShadowStack {
+    pub fn shadows(&self)->&[BoxShadowValue] { match self {Self::One(v)=>std::slice::from_ref(v),Self::Many(v)=>v} }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -125,6 +142,13 @@ impl<'de> Deserialize<'de> for DimensionValue {
 
 /// Style description that can be serialized from JS
 /// Note: This is only used for JSON deserialization, not direct napi binding
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupStyleValue {
+    pub group: String,
+    pub style: Box<StyleDesc>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StyleDesc {
@@ -145,6 +169,10 @@ pub struct StyleDesc {
     pub gap: Option<f64>,
     pub row_gap: Option<f64>,
     pub column_gap: Option<f64>,
+    pub grid_column_start: Option<f64>,
+    pub grid_column_end: Option<f64>,
+    pub grid_row_start: Option<f64>,
+    pub grid_row_end: Option<f64>,
     pub grid_template_columns: Option<f64>,
     pub grid_template_rows: Option<f64>,
     pub grid_column_min: Option<String>,
@@ -152,6 +180,7 @@ pub struct StyleDesc {
 
     // Sizing - now supports both numbers and strings like "100%" or "auto"
     pub width: Option<DimensionValue>,
+    pub aspect_ratio: Option<f32>,
     pub height: Option<DimensionValue>,
     pub min_width: Option<DimensionValue>,
     pub min_height: Option<DimensionValue>,
@@ -197,12 +226,13 @@ pub struct StyleDesc {
     pub border_top_right_radius: Option<f64>,
     pub border_bottom_left_radius: Option<f64>,
     pub border_bottom_right_radius: Option<f64>,
-    pub box_shadow: Option<BoxShadowValue>,
+    pub box_shadow: Option<BoxShadowStack>,
 
     // Text
     pub font_size: Option<f64>,
     pub font_family: Option<String>,
     pub font_weight: Option<FontWeightValue>,
+    pub font_features: Option<FontFeatureMap>,
     pub text_align: Option<String>,
     pub line_height: Option<f64>,
     pub white_space: Option<String>,
@@ -231,6 +261,10 @@ pub struct StyleDesc {
 
     // Pseudo-selector styles — applied by GPUI natively (no JS round-trip).
     // Uses Box to avoid infinite-size struct (StyleDesc contains StyleDesc).
+    pub group: Option<String>,
+    pub group_hover: Option<GroupStyleValue>,
+    pub focus: Option<Box<StyleDesc>>,
+    pub focus_visible: Option<Box<StyleDesc>>,
     pub hover: Option<Box<StyleDesc>>,
     pub active: Option<Box<StyleDesc>>,
 }

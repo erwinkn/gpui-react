@@ -106,6 +106,10 @@ pub(crate) fn to_element_id(id: f64) -> Result<u64> {
     raw_element_id(id).map_err(Error::from_reason)
 }
 
+#[cfg(target_os = "macos")]
+static FRAME_TICK_PENDING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 thread_local! {
     #[cfg(target_os = "macos")]
     static MAC_PLATFORM: RefCell<Option<Rc<gpui_macos::MacPlatform>>> = const { RefCell::new(None) };
@@ -625,9 +629,11 @@ async fn run_ui_commands(
                 view.request_focus(id, window, cx);
                 window.refresh();
             }),
-            UiCommand::FocusNext => window.update(cx, |_view, window, cx| window.focus_next(cx)),
+            UiCommand::FocusNext => {
+                window.update(cx, |view, window, cx| view.focus_scoped(true, window, cx))
+            }
             UiCommand::FocusPrevious => {
-                window.update(cx, |_view, window, cx| window.focus_prev(cx))
+                window.update(cx, |view, window, cx| view.focus_scoped(false, window, cx))
             }
             UiCommand::GetFocusedElementId { response } => {
                 window.update(cx, |view, window, _cx| {
@@ -1245,6 +1251,7 @@ impl GpuixRenderer {
     /// Acquires the tree mutex ONCE for the entire batch.
     #[napi]
     pub fn apply_batch(&self, json: String) -> Result<Vec<f64>> {
+        crate::frame_profile::batch(json.len());
         let mut tree = self.tree.lock().unwrap();
         let destroyed =
             apply_batch_to_tree(&mut tree, json.as_bytes()).map_err(Error::from_reason)?;
@@ -1255,9 +1262,108 @@ impl GpuixRenderer {
 
     // ── Frame loop ───────────────────────────────────────────────────
 
+    /// Begin an opt-in profile of native draws, submissions, and binding work.
+    #[napi]
+    pub fn start_frame_profile(&self, keep_visible: Option<bool>) {
+        crate::frame_profile::start(keep_visible.unwrap_or(false));
+    }
+
+    /// Test support: resize the actual macOS content view through GPUI.
+    #[cfg(all(feature = "test-support", target_os = "macos"))]
+    #[napi]
+    pub fn resize_window_for_test(&self, width: f64, height: f64) -> Result<()> {
+        if !width.is_finite()
+            || !height.is_finite()
+            || width < 100.0
+            || height < 100.0
+            || width > 10000.0
+            || height > 10000.0
+        {
+            return Err(Error::from_reason(
+                "Test window dimensions must be between 100 and 10,000 pixels",
+            ));
+        }
+        update_window_without_view(|window, _| {
+            window.resize(gpui::size(gpui::px(width as f32), gpui::px(height as f32)))
+        })
+    }
+
+    /// Stop profiling and return timing data as JSON. No content is recorded.
+    #[napi]
+    pub fn take_frame_profile(&self) -> String {
+        crate::frame_profile::take()
+    }
+
+    /// Test support: enqueue mouse motion in this process's AppKit queue.
+    /// This does not move the system pointer or post events to another app.
+    #[cfg(feature = "test-support")]
+    #[napi]
+    pub fn queue_app_kit_mouse_moves(
+        &self,
+        count: u32,
+        x: f64,
+        y: f64,
+        delta_y: f64,
+    ) -> Result<()> {
+        if count > 10_000 {
+            return Err(Error::from_reason(
+                "At most 10,000 test events may be queued",
+            ));
+        }
+        if !x.is_finite() || !y.is_finite() || !delta_y.is_finite() {
+            return Err(Error::from_reason(
+                "Test pointer coordinates must be finite",
+            ));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            return MAC_PLATFORM.with(|platform| {
+                let platform = platform.borrow();
+                let platform = platform
+                    .as_ref()
+                    .ok_or_else(|| Error::from_reason("Renderer not initialized"))?;
+                platform.queue_test_mouse_moves(count, x, y, delta_y);
+                Ok(())
+            });
+        }
+        #[cfg(not(target_os = "macos"))]
+        Err(Error::from_reason("AppKit event testing requires macOS"))
+    }
+
+    /// Enqueue a host tick at display cadence. Only macOS needs an embedded
+    /// host pump. Calls are coalesced until tick() begins; no frame queue grows.
+    #[napi]
+    pub fn set_frame_callback(&self, callback: Option<ThreadsafeFunction<()>>) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            FRAME_TICK_PENDING.store(false, std::sync::atomic::Ordering::Release);
+            gpui_macos::set_embedded_frame_waker(callback.map(|callback| {
+                std::sync::Arc::new(move || {
+                    if !FRAME_TICK_PENDING.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                        let status = callback.call(
+                            Ok(()),
+                            napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
+                        );
+                        if status != napi::Status::Ok {
+                            FRAME_TICK_PENDING.store(false, std::sync::atomic::Ordering::Release);
+                        }
+                    }
+                }) as std::sync::Arc<dyn Fn() + Send + Sync>
+            }));
+            return true;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = callback;
+            false
+        }
+    }
+
     /// Pump the native event loop. Returns false after the last window closes.
     #[napi]
     pub fn tick(&self) -> Result<bool> {
+        #[cfg(target_os = "macos")]
+        FRAME_TICK_PENDING.store(false, std::sync::atomic::Ordering::Release);
         let initialized = *self.initialized.lock().unwrap();
         if !initialized {
             return Err(Error::from_reason(
@@ -1559,7 +1665,7 @@ impl GpuixRenderer {
     #[napi]
     pub fn focus_next(&self) -> Result<()> {
         #[cfg(target_os = "macos")]
-        return update_window(|_view, window, cx| window.focus_next(cx));
+        return update_window(|view, window, cx| view.focus_scoped(true, window, cx));
 
         #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
         return self.send_ui_command(UiCommand::FocusNext);
@@ -1577,7 +1683,7 @@ impl GpuixRenderer {
     #[napi]
     pub fn focus_previous(&self) -> Result<()> {
         #[cfg(target_os = "macos")]
-        return update_window(|_view, window, cx| window.focus_prev(cx));
+        return update_window(|view, window, cx| view.focus_scoped(false, window, cx));
 
         #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
         return self.send_ui_command(UiCommand::FocusPrevious);
@@ -1733,10 +1839,67 @@ impl GpuixRenderer {
 
     // ── Selection API ────────────────────────────────────────────────
 
+    /// Register private application fonts before the first text layout.
+    #[napi]
+    pub fn register_fonts(&self, fonts: Vec<napi::bindgen_prelude::Buffer>) -> Result<()> {
+        let fonts = fonts
+            .into_iter()
+            .map(|bytes| std::borrow::Cow::Owned(bytes.to_vec()))
+            .collect();
+        #[cfg(target_os = "macos")]
+        return update_window_without_view(|window, _| window.text_system().add_fonts(fonts))
+            .and_then(|r| r.map_err(|e| Error::from_reason(e.to_string())));
+        #[cfg(not(target_os = "macos"))]
+        Err(Error::from_reason(
+            "Embedded font loading is not yet exposed on this platform",
+        ))
+    }
+
+    /// Cached syntax tokens with line-relative UTF-16 offsets for React views.
+    #[napi]
+    pub fn highlight_code(
+        &self,
+        source: String,
+        path: Option<String>,
+        language: Option<String>,
+    ) -> Vec<Vec<crate::syntax_api::SyntaxToken>> {
+        crate::syntax_api::tokens(&source, path.as_deref(), language.as_deref())
+    }
+
+    /// Batch native font measurements for data-dependent cell layouts.
+    #[napi]
+    pub fn measure_text_widths(
+        &self,
+        family: String,
+        size: f64,
+        weight: f64,
+        texts: Vec<String>,
+    ) -> Result<Vec<f64>> {
+        if !size.is_finite() || size <= 0.0 || !weight.is_finite() || weight <= 0.0 {
+            return Err(Error::from_reason(
+                "Text size and weight must be finite and positive",
+            ));
+        }
+        #[cfg(target_os = "macos")]
+        return update_window_without_view(|window, _| {
+            crate::text_measure::widths(window, family, size, weight, texts)
+        });
+        #[cfg(not(target_os = "macos"))]
+        Err(Error::from_reason(
+            "Native text measurements are not yet exposed on this platform",
+        ))
+    }
+
     /// The current text selection joined in document order, or null.
     #[napi]
     pub fn get_selected_text(&self) -> Option<String> {
         self.selection.lock().selected_text()
+    }
+
+    /// Selected text plus current visible range geometry, in window pixels.
+    #[napi]
+    pub fn get_selection_info(&self) -> String {
+        crate::text::paint::selection_info(&self.selection)
     }
 
     /// Drop the current selection and request a repaint.
@@ -1807,19 +1970,24 @@ impl GpuixRenderer {
         let index = index as usize;
         let offset = offset_in_item.unwrap_or(0.0) as f32;
         #[cfg(target_os = "macos")]
-        if !VIRTUAL_LIST_STATES.with(|cell| {
-            if !cell.borrow().contains_key(&id) {
-                return false;
-            }
-            queue_virtual_list_scroll(id, index, offset);
-            true
-        }) {
+        if !self
+            .tree
+            .lock()
+            .unwrap()
+            .elements
+            .get(&id)
+            .is_some_and(|element| element.element_type == "virtual-list")
+        {
             SCROLL_HANDLES.with(|cell| {
                 let handles = cell.borrow();
                 if let Some(handle) = handles.get(&id) {
                     handle.scroll_to_item(index);
                 }
             });
+        } else {
+            // Layout effects run after the React commit, before the first native
+            // frame. The retained node already exists but its ListState may not.
+            queue_virtual_list_scroll(id, index, offset);
         }
         #[cfg(target_os = "macos")]
         return invalidate_window();
@@ -1928,6 +2096,11 @@ impl GpuixRenderer {
     #[napi]
     pub fn get_automation_tree(&self) -> Result<String> {
         self.request_invalidate()?;
+        // Automation queries need a current hit-test tree even when the window
+        // is occluded and the display link is stopped. Normal mutations wait
+        // for the platform frame; only this explicit query forces a draw.
+        #[cfg(target_os = "macos")]
+        update_window_without_view(|window, cx| window.draw(cx).clear(cx))?;
         let bounds = self.automation_bounds()?;
         let tree = self.tree.lock().unwrap();
         let json = tree.to_automation_json(&bounds);
@@ -1952,8 +2125,14 @@ impl GpuixRenderer {
     }
 
     #[napi]
-    pub fn get_painted_text(&self) -> Vec<String> {
-        crate::text::painted_text()
+    pub fn get_painted_text(&self) -> Result<Vec<String>> {
+        #[cfg(target_os = "macos")]
+        return update_window_without_view(|window, cx| {
+            window.draw(cx).clear(cx);
+            crate::text::painted_text()
+        });
+        #[cfg(not(target_os = "macos"))]
+        Ok(crate::text::painted_text())
     }
 
     /// Every highlight wash painted in the last frame, in paint order.
@@ -1961,11 +2140,15 @@ impl GpuixRenderer {
     /// A quad is invisible to `getPaintedText()`, so this is the only way to
     /// assert on `highlight` without a screenshot.
     #[napi]
-    pub fn get_painted_highlights(&self) -> Vec<crate::element_tree::HighlightMatch> {
-        crate::text::painted_highlights()
-            .into_iter()
-            .map(Into::into)
-            .collect()
+    pub fn get_painted_highlights(&self) -> Result<Vec<crate::element_tree::HighlightMatch>> {
+        #[cfg(target_os = "macos")]
+        let highlights = update_window_without_view(|window, cx| {
+            window.draw(cx).clear(cx);
+            crate::text::painted_highlights()
+        })?;
+        #[cfg(not(target_os = "macos"))]
+        let highlights = crate::text::painted_highlights();
+        Ok(highlights.into_iter().map(Into::into).collect())
     }
 
     /// Simulate space-separated keystrokes through the focused element's input pipeline.
@@ -2610,12 +2793,12 @@ impl WebGpuixRenderer {
 
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = focusNext)]
     pub fn focus_next(&self) -> Result<(), wasm_bindgen::JsValue> {
-        update_web_window(|_view, window, cx| window.focus_next(cx))
+        update_web_window(|view, window, cx| view.focus_scoped(true, window, cx))
     }
 
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = focusPrevious)]
     pub fn focus_previous(&self) -> Result<(), wasm_bindgen::JsValue> {
-        update_web_window(|_view, window, cx| window.focus_prev(cx))
+        update_web_window(|view, window, cx| view.focus_scoped(false, window, cx))
     }
 
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = getFocusedElementId)]
@@ -3043,6 +3226,7 @@ pub(crate) struct GpuixView {
     /// Created lazily for elements with overflow: "scroll" (or per-axis scroll).
     /// Handles persist across renders so GPUI maintains scroll offset state.
     pub(crate) scroll_handles: HashMap<u64, gpui::ScrollHandle>,
+    scroll_groups: crate::scroll_groups::ScrollGroups,
     /// Native animation clocks keyed by retained element ID.
     pub(crate) motion_states: HashMap<u64, crate::motion::MotionState>,
     /// Live text selection, shared with the paint closures and the napi methods.
@@ -3243,6 +3427,7 @@ impl GpuixView {
             focus_subscriptions: HashMap::new(),
             custom_registry: CustomElementRegistry::with_defaults(),
             scroll_handles: HashMap::new(),
+            scroll_groups: Default::default(),
             motion_states: HashMap::new(),
             selection,
             virtual_lists: HashMap::new(),
@@ -3369,6 +3554,7 @@ impl GpuixView {
             event_callback: &callback,
             focus_handles: &self.focus_handles,
             scroll_handles: &mut self.scroll_handles,
+            scroll_groups: &mut self.scroll_groups,
             custom_registry: &mut self.custom_registry,
             virtual_lists: &mut self.virtual_lists,
             motion_states: &mut self.motion_states,
@@ -3493,6 +3679,7 @@ pub(crate) struct BuildCtx<'a> {
     pub event_callback: &'a Option<EventCallback>,
     pub focus_handles: &'a HashMap<u64, gpui::FocusHandle>,
     pub scroll_handles: &'a mut HashMap<u64, gpui::ScrollHandle>,
+    pub scroll_groups: &'a mut crate::scroll_groups::ScrollGroups,
     pub custom_registry: &'a mut CustomElementRegistry,
     virtual_lists: &'a mut HashMap<u64, VirtualListEntry>,
     pub motion_states: &'a mut HashMap<u64, crate::motion::MotionState>,
@@ -3520,6 +3707,8 @@ pub(crate) struct BuildCtx<'a> {
 /// may run more than once per frame.
 #[derive(Clone)]
 pub(crate) struct Inherited {
+    /// Deferred child overlays must paint above their containing overlay.
+    pub overlay_priority: Option<usize>,
     /// False once an ancestor sets `userSelect: "none"`.
     pub selectable: bool,
     /// Selection wash colour for this subtree.
@@ -3537,6 +3726,7 @@ impl Inherited {
         let mut wash = theme.accent;
         wash.a = 0.35;
         Self {
+            overlay_priority: None,
             selectable: true,
             selection_wash: wash,
             highlight: None,
@@ -3653,6 +3843,9 @@ struct VirtualListEntry {
     child_revisions: Vec<u64>,
     row_focus_handles: Vec<Option<gpui::FocusHandle>>,
     seen_rows: HashSet<u64>,
+    pending_range: Option<(usize, usize)>,
+    requested_range: Option<(usize, usize)>,
+    scroll_request: Option<serde_json::Value>,
 }
 
 impl VirtualListEntry {
@@ -3666,18 +3859,9 @@ impl VirtualListEntry {
         let item_count = config.logical_count(child_ids.len());
         let state = config.make_state(item_count, &row_focus_handles);
         if row_focus_handles.len() != item_count {
-            for (offset, handle) in row_focus_handles.iter().enumerate() {
-                if handle.is_some() {
-                    let logical = window_start + offset;
-                    if logical < item_count {
-                        state.splice_focusable(
-                            logical..logical + 1,
-                            std::iter::once(handle.clone()),
-                        );
-                    }
-                }
-            }
+            state.set_item_focus_handles(window_start, row_focus_handles.iter().cloned());
         }
+
         Self {
             state,
             config,
@@ -3686,6 +3870,9 @@ impl VirtualListEntry {
             child_revisions,
             row_focus_handles,
             seen_rows: HashSet::new(),
+            pending_range: None,
+            requested_range: None,
+            scroll_request: None,
         }
     }
 
@@ -3745,7 +3932,9 @@ impl VirtualListEntry {
                 })
             })
             .collect();
-        if self.config != config {
+        let mut structural_config = self.config;
+        structural_config.item_count = config.item_count;
+        if structural_config != config {
             let scroll_top = self.state.logical_scroll_top();
             let should_follow =
                 config.follow_tail && (!self.config.follow_tail || self.state.is_following_tail());
@@ -3765,6 +3954,20 @@ impl VirtualListEntry {
             }
             *self = replacement;
             return;
+        }
+
+        // An append changes the logical count, not the list's identity. Preserve
+        // measured row heights and native follow/anchor state.
+        if let Some(count) = config.item_count {
+            let old = self.state.item_count();
+            if count != old {
+                self.state
+                    .splice(count.min(old)..old, count.saturating_sub(old));
+            }
+        }
+        self.config = config;
+        if self.window_start != window_start || self.child_ids != child_ids {
+            self.requested_range = None;
         }
 
         // gpui anchors a list on a logical item, so splicing rows in at the
@@ -3817,14 +4020,24 @@ impl VirtualListEntry {
             }
         }
 
-        for (offset, (&id, focus_handle)) in child_ids.iter().zip(&row_focus_handles).enumerate() {
-            let logical = window_start + offset;
-            let focusability_changed = old_rows
-                .get(&id)
-                .is_some_and(|(_, old_handle)| old_handle.is_some() != focus_handle.is_some());
-            if focusability_changed {
-                self.state
-                    .splice_focusable(logical..logical + 1, std::iter::once(focus_handle.clone()));
+        // Mounting a different React window changes focus ownership, not row identity.
+        // Splicing here used to erase estimates for every unpainted focusable row.
+        if config.item_count.is_some() && (self.window_start != window_start || !focus_unchanged) {
+            self.state
+                .set_item_focus_handles(self.window_start, self.child_ids.iter().map(|_| None));
+            self.state
+                .set_item_focus_handles(window_start, row_focus_handles.iter().cloned());
+        } else if config.item_count.is_none() {
+            for (offset, (&id, focus_handle)) in
+                child_ids.iter().zip(&row_focus_handles).enumerate()
+            {
+                if old_rows
+                    .get(&id)
+                    .is_some_and(|(_, old)| old.is_some() != focus_handle.is_some())
+                {
+                    self.state
+                        .set_item_focus_handles(offset, std::iter::once(focus_handle.clone()));
+                }
             }
         }
 
@@ -3885,12 +4098,7 @@ impl VirtualListEntry {
 }
 
 impl GpuixView {
-    fn request_focus(
-        &mut self,
-        id: u64,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
-    ) {
+    fn request_focus(&mut self, id: u64, window: &mut gpui::Window, cx: &mut gpui::Context<Self>) {
         self.reveal_virtual_list_ancestor(id);
         if let Some(handle) = self.focus_handles.get(&id) {
             self.pending_focus_element = None;
@@ -3902,9 +4110,9 @@ impl GpuixView {
     }
 
     pub(crate) fn focused_element_id(&self, window: &gpui::Window) -> Option<u64> {
-        self.focus_handles.iter().find_map(|(id, handle)| {
-            handle.is_focused(window).then_some(*id)
-        })
+        self.focus_handles
+            .iter()
+            .find_map(|(id, handle)| handle.is_focused(window).then_some(*id))
     }
 
     fn descendant_ids(&self, ancestor: u64) -> HashSet<u64> {
@@ -3923,7 +4131,13 @@ impl GpuixView {
         ids
     }
 
-    fn focus_among(&self, ancestor: u64, forward: bool, window: &mut gpui::Window, cx: &mut gpui::App) {
+    fn focus_among(
+        &self,
+        ancestor: u64,
+        forward: bool,
+        window: &mut gpui::Window,
+        cx: &mut gpui::App,
+    ) {
         let ids = self.descendant_ids(ancestor);
         let allowed: HashSet<gpui::FocusId> = self
             .focus_handles
@@ -3934,6 +4148,39 @@ impl GpuixView {
             window.focus_next_among(|id| allowed.contains(id), cx);
         } else {
             window.focus_prev_among(|id| allowed.contains(id), cx);
+        }
+    }
+
+    /// Opt-in scopes keep keyboard traversal inside the closest marked ancestor.
+    pub(crate) fn focus_scoped(
+        &self,
+        forward: bool,
+        window: &mut gpui::Window,
+        cx: &mut gpui::App,
+    ) {
+        let scope = self.focused_element_id(window).and_then(|id| {
+            let tree = self.tree.lock().unwrap();
+            let mut current = Some(id);
+            while let Some(id) = current {
+                let element = tree.elements.get(&id)?;
+                if element
+                    .custom_props
+                    .get("focusScope")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(true)
+                {
+                    return Some(id);
+                }
+                current = element.parent;
+            }
+            None
+        });
+        if let Some(scope) = scope {
+            self.focus_among(scope, forward, window, cx);
+        } else if forward {
+            window.focus_next(cx);
+        } else {
+            window.focus_prev(cx);
         }
     }
 
@@ -4156,6 +4403,7 @@ impl gpui::Render for GpuixView {
     ) -> impl gpui::IntoElement {
         use gpui::IntoElement;
 
+        let build_started = crate::frame_profile::build_start();
         window.set_window_title(&self.window_title);
 
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -4180,6 +4428,10 @@ impl gpui::Render for GpuixView {
         // from scroll to non-scroll) is handled inside build_host_container().
         self.scroll_handles
             .retain(|id, _| tree.elements.contains_key(id));
+        // Keep live membership until resolve() sees any group change. Otherwise
+        // removing a prop could leave the element using its old shared handle.
+        self.scroll_groups
+            .prune(|id, _| tree.elements.contains_key(&id));
         self.virtual_lists
             .retain(|id, _| tree.elements.contains_key(id));
         self.motion_states
@@ -4206,6 +4458,7 @@ impl gpui::Render for GpuixView {
                     event_callback: &callback,
                     focus_handles: &self.focus_handles,
                     scroll_handles: &mut self.scroll_handles,
+                    scroll_groups: &mut self.scroll_groups,
                     custom_registry: &mut self.custom_registry,
                     virtual_lists: &mut self.virtual_lists,
                     motion_states: &mut self.motion_states,
@@ -4298,6 +4551,7 @@ impl gpui::Render for GpuixView {
         if motion_active {
             window.request_animation_frame();
         }
+        crate::frame_profile::build_end(build_started, tree.elements.len());
 
         result
     }
@@ -4353,6 +4607,30 @@ pub(crate) fn build_element(
     // elements see the same cascade.
     let parent_inherited = ctx.inherited.clone();
     ctx.inherited = parent_inherited.clone().descend(style);
+    if element.element_type == "anchored"
+        && (element
+            .custom_props
+            .get("deferred")
+            .and_then(serde_json::Value::as_bool)
+            != Some(false)
+            || element
+                .custom_props
+                .get("selectionAnchor")
+                .and_then(serde_json::Value::as_bool)
+                == Some(true))
+    {
+        let requested = element
+            .custom_props
+            .get("priority")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(1) as usize;
+        ctx.inherited.overlay_priority = Some(
+            parent_inherited
+                .overlay_priority
+                .map(|parent| requested.max(parent.saturating_add(1)))
+                .unwrap_or(requested),
+        );
+    }
 
     // A `highlight` here replaces any ancestor's: the nearest declaration wins,
     // and `GroupList::collect` skips nested declarations so an ancestor never
@@ -4399,6 +4677,8 @@ pub(crate) fn build_element(
             let inherited = ctx.inherited.clone();
             let render_ctx = CustomRenderContext {
                 id,
+                overlay_priority: inherited.overlay_priority.unwrap_or(0),
+                now: ctx.now,
                 events: &element.events,
                 event_callback: ctx.event_callback,
                 focus_handle: ctx.focus_handles.get(&id),
@@ -4517,13 +4797,45 @@ fn build_virtual_list(
         }
     };
 
+    // A declarative anchor commits with the row window. Resolve it before any
+    // layout so neither a test renderer nor a live window paints the old anchor
+    // against a newly replaced child window.
+    let request = element.custom_props.get("scrollTo");
+    if let Some(entry) = ctx.virtual_lists.get_mut(&element.id) {
+        if entry.scroll_request.as_ref() != request {
+            entry.scroll_request = request.cloned();
+            if let Some(index) = request
+                .and_then(|value| value.get("index"))
+                .and_then(json_usize)
+            {
+                let offset = request
+                    .and_then(|value| value.get("offset"))
+                    .and_then(serde_json::Value::as_f64)
+                    .filter(|value| value.is_finite())
+                    .unwrap_or(0.0) as f32;
+                if config.follow_tail && index >= config.logical_count(child_ids.len()) {
+                    list_state.set_follow_mode(gpui::FollowMode::Tail);
+                } else {
+                    list_state.scroll_to(gpui::ListOffset {
+                        item_ix: index.min(config.logical_count(child_ids.len())),
+                        offset_in_item: gpui::px(offset),
+                    });
+                }
+            }
+        }
+    }
+
     // Queued scrolls apply here, after `sync` spliced this frame's child
     // changes, so the indices JS computed against its committed child list are
     // the indices the splice-adjusted ListState sees.
     if let Some(offset) =
         PENDING_VIRTUAL_LIST_SCROLLS.with(|cell| cell.borrow_mut().remove(&element.id))
     {
-        list_state.scroll_to(offset);
+        if config.follow_tail && offset.item_ix >= config.logical_count(child_ids.len()) {
+            list_state.set_follow_mode(gpui::FollowMode::Tail);
+        } else {
+            list_state.scroll_to(offset);
+        }
     }
 
     if element.events.contains("visibleRange") {
@@ -4533,6 +4845,7 @@ fn build_virtual_list(
             emit_event_full(&callback, list_id, "visibleRange", |payload| {
                 payload.start_index = Some(event.visible_range.start as f64);
                 payload.end_index = Some(event.visible_range.end as f64);
+                payload.is_following_tail = Some(event.is_following_tail);
             });
         });
     }
@@ -4541,11 +4854,42 @@ fn build_virtual_list(
     // Cloned, not copied: gpui runs this processor once per requested row, so
     // the captured value must survive every call.
     let inherited = ctx.inherited.clone();
+    let report_missing = element.events.contains("visibleRange") && config.item_count.is_some();
     let render_item = cx.processor(move |view, index: usize, window, cx| {
-        let Some(entry) = view.virtual_lists.get(&list_id) else {
+        let Some(entry) = view.virtual_lists.get_mut(&list_id) else {
             return unmounted_virtual_row(1.0);
         };
         let Some(child_id) = entry.child_at(index) else {
+            // Request every missing row used by this layout, including an
+            // appended tail. Coalesce speculative layout requests once per
+            // effect cycle and send them after releasing the view borrow.
+            if report_missing {
+                let first = entry.pending_range.is_none();
+                let (start, end) = entry.pending_range.unwrap_or((index, index + 1));
+                entry.pending_range = Some((start.min(index), end.max(index + 1)));
+                if first {
+                    cx.defer_in(window, move |view, _window, _cx| {
+                        let Some(entry) = view.virtual_lists.get_mut(&list_id) else {
+                            return;
+                        };
+                        let Some(range) = entry.pending_range.take() else {
+                            return;
+                        };
+                        if entry.requested_range != Some(range) {
+                            entry.requested_range = Some(range);
+                            emit_event_full(
+                                &view.event_callback,
+                                list_id,
+                                "visibleRange",
+                                |payload| {
+                                    payload.start_index = Some(range.0 as f64);
+                                    payload.end_index = Some(range.1 as f64);
+                                },
+                            );
+                        }
+                    });
+                }
+            }
             // Empty measures as 0 and poisons ListState. Keep the estimate.
             return unmounted_virtual_row(entry.config.estimated_item_height.unwrap_or(1.0));
         };
@@ -4560,7 +4904,11 @@ fn build_virtual_list(
     if let Some(style) = element.style.as_deref() {
         list = apply_styles(list, style);
     }
-    apply_accessibility(list, &element.custom_props, None).into_any_element()
+    crate::automation::track_element_bounds(
+        apply_accessibility(list, &element.custom_props, None).into_any_element(),
+        element.id,
+    )
+    .into_any_element()
 }
 
 fn unmounted_virtual_row(height: f32) -> gpui::AnyElement {
@@ -4677,25 +5025,38 @@ pub(crate) fn build_host_container(
                 .overflow_x_scroll()
                 .restrict_scroll_to_axis();
         } else if needs_scroll_y {
-            el = el.overflow_y_scroll();
+            el = el.overflow_y_scroll().restrict_scroll_to_axis();
         }
 
         // Attach a persistent ScrollHandle when scrolling is enabled.
         // The handle persists across renders (stored in GpuixView::scroll_handles)
         // so GPUI maintains the scroll offset between frames.
         if needs_scroll_x || needs_scroll_y {
+            // Match GPUI's data_table: sibling row/header/footer viewports
+            // track one ScrollHandle, so scrolling is resolved in the same
+            // native frame. Group members must have equal content/viewport
+            // widths. Never mirror these offsets through the JS event bridge.
+            let group = if needs_scroll_x && !needs_scroll_y {
+                element
+                    .custom_props
+                    .get("scrollGroup")
+                    .and_then(serde_json::Value::as_str)
+            } else {
+                None
+            };
             let handle = ctx
-                .scroll_handles
-                .entry(element.id)
-                .or_insert_with(gpui::ScrollHandle::new);
-            el = el.track_scroll(handle);
+                .scroll_groups
+                .resolve(element.id, group, ctx.scroll_handles);
+            el = el.track_scroll(&handle);
         } else {
             // Element is no longer scrollable — remove stale handle.
             ctx.scroll_handles.remove(&element.id);
+            ctx.scroll_groups.remove(element.id);
         }
     } else {
         // No style at all — remove stale handle if it existed.
         ctx.scroll_handles.remove(&element.id);
+        ctx.scroll_groups.remove(element.id);
     }
 
     // If a FocusHandle was pre-created for this element (by sync_focus_handles),
@@ -4955,6 +5316,36 @@ pub(crate) fn build_host_container(
         el = el.capture_pointer();
     }
 
+    // A paragraph owns native line breaking. React supplies runs and atomic
+    // controls; it never measures words or mirrors per-frame coordinates.
+    if element
+        .custom_props
+        .get("inlineFlow")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+    {
+        el = el.flex().flex_wrap().items_baseline();
+        if let Some(content) = &element.content {
+            for fragment in inline_text_fragments(element.id, content, style, ctx) {
+                el = el.child(fragment);
+            }
+        }
+        for child_id in &element.children {
+            for fragment in build_inline_child(*child_id, None, ctx, window, cx) {
+                el = el.child(fragment);
+            }
+        }
+        return el.into_any_element();
+    }
+
+    if element
+        .custom_props
+        .get("preserveSelection")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+    {
+        el = el.on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation());
+    }
     // Text content — selectable, same as a <text> leaf.
     if let Some(ref content) = element.content {
         el = el.child(text_content(element, content, ctx));
@@ -4972,6 +5363,113 @@ pub(crate) fn build_host_container(
     }
 
     el.into_any_element()
+}
+
+/// Text leaves are split at Unicode line-break opportunities in Rust. The
+/// source byte offset is the sub-key, so font/width changes do not change text
+/// selection identity. Non-text children stay real GPUI elements with their
+/// existing focus, hit testing and plugin-provided children.
+fn build_inline_child(
+    id: u64,
+    inherited_style: Option<StyleDesc>,
+    ctx: &mut BuildCtx,
+    window: &mut gpui::Window,
+    cx: &mut gpui::Context<GpuixView>,
+) -> Vec<gpui::AnyElement> {
+    use gpui::prelude::*;
+    let Some(element) = ctx.tree.elements.get(&id) else {
+        return Vec::new();
+    };
+    if element.element_type != "text" {
+        let mut wrapper = gpui::div().flex_none().max_w_full();
+        // Atomic inline widgets can align to the measured line box without JS offsets.
+        wrapper = match element
+            .custom_props
+            .get("inlineAlign")
+            .and_then(serde_json::Value::as_str)
+        {
+            Some("middle") => wrapper.self_center(),
+            Some("top") => wrapper.self_start(),
+            Some("bottom") => wrapper.self_end(),
+            _ => wrapper,
+        };
+        return vec![wrapper
+            .child(build_element(id, ctx, window, cx))
+            .into_any_element()];
+    }
+    let mut style = inherited_style.unwrap_or_default();
+    if let Some(own) = element.style.as_deref() {
+        macro_rules! inherit { ($($field:ident),*) => { $(if own.$field.is_some() { style.$field = own.$field.clone(); })* }; }
+        inherit!(
+            font_size,
+            font_family,
+            font_weight,
+            font_features,
+            color,
+            line_height,
+            text_decoration,
+            user_select,
+            selection_color,
+            background_color,
+            border_radius
+        );
+    }
+    let previous = ctx.inherited.clone();
+    ctx.inherited = previous.clone().descend(Some(&style));
+    let mut result = element
+        .content
+        .as_deref()
+        .map(|s| inline_text_fragments(id, s, Some(&style), ctx))
+        .unwrap_or_default();
+    for child in element.children.clone() {
+        result.extend(build_inline_child(
+            child,
+            Some(style.clone()),
+            ctx,
+            window,
+            cx,
+        ));
+    }
+    ctx.inherited = previous;
+    result
+}
+
+fn inline_text_fragments(
+    id: u64,
+    content: &str,
+    style: Option<&StyleDesc>,
+    ctx: &BuildCtx,
+) -> Vec<gpui::AnyElement> {
+    use gpui::prelude::*;
+    let mut result = Vec::new();
+    let mut start = 0;
+    for (end, _) in unicode_linebreak::linebreaks(content) {
+        let value = &content[start..end];
+        let text = selectable_text(crate::text::SelectableText {
+            group: crate::text::search::group_id(ctx.tree, id),
+            selectable: ctx.inherited.selectable,
+            highlight: ctx
+                .inherited
+                .highlight
+                .clone()
+                .map(crate::text::HighlightSource::Native),
+            ..crate::text::SelectableText::new(
+                id,
+                start + 1,
+                value.to_string().into(),
+                None,
+                ctx.selection.clone(),
+                ctx.inherited.selection_wash,
+            )
+        });
+        let mut fragment = gpui::div().flex_none().max_w_full();
+        if let Some(style) = style {
+            fragment = apply_styles(fragment, style);
+        }
+        result.push(fragment.child(text).into_any_element());
+        start = end;
+    }
+    result
 }
 
 /// A selectable text run owned by `element`. Runs are left to gpui so the
@@ -5049,6 +5547,20 @@ where
     E: gpui::Styled + gpui::StatefulInteractiveElement,
 {
     el = apply_styles(el, style);
+    if let Some(group) = &style.group {
+        el = el.group(group.clone());
+    }
+    if let Some(group) = &style.group_hover {
+        el = el.group_hover(group.group.clone(), |refinement| {
+            apply_styles(refinement, &group.style)
+        });
+    }
+    if let Some(focus) = style.focus.as_deref() {
+        el = el.focus(|refinement| apply_styles(refinement, focus));
+    }
+    if let Some(focus) = style.focus_visible.as_deref() {
+        el = el.focus_visible(|refinement| apply_styles(refinement, focus));
+    }
     if let Some(hover_style) = style.hover.as_deref() {
         el = el.hover(|refinement| apply_styles(refinement, hover_style));
     }
@@ -5063,6 +5575,26 @@ pub(crate) fn apply_styles<E: gpui::Styled>(mut el: E, style: &StyleDesc) -> E {
         Some("flex") => el = el.flex(),
         Some("grid") => el = el.grid(),
         _ => {}
+    }
+    if let Some(v) = style.grid_column_start {
+        if v.is_finite() && v != 0.0 {
+            el = el.col_start(v.round().clamp(-32767.0, 32767.0) as i16);
+        }
+    }
+    if let Some(v) = style.grid_column_end {
+        if v.is_finite() && v != 0.0 {
+            el = el.col_end(v.round().clamp(-32767.0, 32767.0) as i16);
+        }
+    }
+    if let Some(v) = style.grid_row_start {
+        if v.is_finite() && v != 0.0 {
+            el = el.row_start(v.round().clamp(-32767.0, 32767.0) as i16);
+        }
+    }
+    if let Some(v) = style.grid_row_end {
+        if v.is_finite() && v != 0.0 {
+            el = el.row_end(v.round().clamp(-32767.0, 32767.0) as i16);
+        }
     }
     if let Some(cols) = style.grid_template_columns {
         let count = cols.round().clamp(1.0, 64.0) as u16;
@@ -5154,6 +5686,9 @@ pub(crate) fn apply_styles<E: gpui::Styled>(mut el: E, style: &StyleDesc) -> E {
     }
     if let Some(gap) = style.column_gap {
         el = el.gap_x(gpui::px(gap as f32));
+    }
+    if let Some(ratio) = style.aspect_ratio.filter(|v| v.is_finite() && *v > 0.0) {
+        el = el.aspect_ratio(ratio);
     }
     if let Some(ref w) = style.width {
         el = apply_width(el, w);
@@ -5256,6 +5791,9 @@ pub(crate) fn apply_styles<E: gpui::Styled>(mut el: E, style: &StyleDesc) -> E {
     if let Some(ref weight) = style.font_weight {
         el = el.font_weight(parse_font_weight(weight));
     }
+    if let Some(ref features) = style.font_features {
+        el = el.font_features(crate::style::font_features(features));
+    }
     // `textAlign` was in the style type but implemented nowhere.
     match style.text_align.as_deref() {
         Some("center") => el = el.text_center(),
@@ -5329,17 +5867,25 @@ pub(crate) fn apply_styles<E: gpui::Styled>(mut el: E, style: &StyleDesc) -> E {
             el = el.border_color(color);
         }
     }
-    if let Some(ref shadow) = style.box_shadow {
-        if let Some(color) = crate::color::parse_color_rgba(&shadow.color) {
-            let shadow = gpui::BoxShadow::new(
-                gpui::px(shadow.offset_x as f32),
-                gpui::px(shadow.offset_y as f32),
-                color.into(),
-            )
-            .blur_radius(gpui::px(shadow.blur_radius.max(0.0) as f32))
-            .spread_radius(gpui::px(shadow.spread_radius as f32));
-            el = el.shadow(vec![shadow]);
-        }
+    if let Some(ref stack) = style.box_shadow {
+        // Arrays follow CSS order: the first layer is closest to the viewer.
+        let shadows = stack
+            .shadows()
+            .iter()
+            .rev()
+            .filter_map(|shadow| {
+                let color = crate::color::parse_color_rgba(&shadow.color)?;
+                let value = gpui::BoxShadow::new(
+                    gpui::px(shadow.offset_x as f32),
+                    gpui::px(shadow.offset_y as f32),
+                    color.into(),
+                )
+                .blur_radius(gpui::px(shadow.blur_radius.max(0.0) as f32))
+                .spread_radius(gpui::px(shadow.spread_radius as f32));
+                Some(if shadow.inset { value.inset() } else { value })
+            })
+            .collect::<Vec<_>>();
+        el = el.shadow(shadows);
     }
     if style.visibility.as_deref() == Some("hidden") {
         el = el.invisible();
@@ -5547,7 +6093,7 @@ impl<'de> serde::Deserialize<'de> for BatchOps<'de> {
                         Err(error) => {
                             return Err(serde::de::Error::custom(format!(
                                 "Batch op {index}: {error}"
-                            )))
+                            )));
                         }
                     }
                 }
@@ -5681,7 +6227,7 @@ impl<'de> serde::Deserialize<'de> for BatchOp<'de> {
                     other => {
                         return Err(serde::de::Error::custom(format!(
                             "unknown operation: {other:?}"
-                        )))
+                        )));
                     }
                 };
                 // Trailing arguments are tolerated, as they were when the op was
@@ -6064,9 +6610,9 @@ fn to_layer_shell_options(options: &LayerShellOptions) -> gpui::layer_shell::Lay
         _ => Layer::Top,
     };
     let anchor = match options.anchor.as_deref() {
-        Some(names) if !names.is_empty() => names
-            .iter()
-            .fold(Anchor::empty(), |acc, name| acc | layer_shell_anchor_bit(name)),
+        Some(names) if !names.is_empty() => names.iter().fold(Anchor::empty(), |acc, name| {
+            acc | layer_shell_anchor_bit(name)
+        }),
         _ => Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
     };
     let keyboard_interactivity = match options.keyboard_interactivity.as_deref() {
@@ -6617,10 +7163,7 @@ mod window_options_tests {
                     opts.margin,
                     Some((gpui::px(0.0), gpui::px(0.0), gpui::px(0.0), gpui::px(0.0)))
                 );
-                assert_eq!(
-                    opts.keyboard_interactivity,
-                    KeyboardInteractivity::None
-                );
+                assert_eq!(opts.keyboard_interactivity, KeyboardInteractivity::None);
             }
             other => panic!("expected a layer-shell window kind, got {other:?}"),
         }

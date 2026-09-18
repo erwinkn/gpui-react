@@ -22,12 +22,16 @@ mod element_tree;
 mod markdown;
 mod motion;
 mod renderer;
+mod scroll_groups;
+mod frame_profile;
 // The data model is public so `examples/bench_serde.rs` measures the real
 // types instead of a copy that silently drifts from them.
 pub mod retained_tree;
 pub mod style;
 mod syntax;
 mod text;
+mod text_measure;
+mod syntax_api;
 mod theme;
 // Desktop only. HTTP goes through reqwest_client, not crates.io reqwest.
 #[cfg(not(target_family = "wasm"))]

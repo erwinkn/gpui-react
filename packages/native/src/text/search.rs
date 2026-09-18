@@ -495,6 +495,18 @@ pub fn is_text_leaf(element: &crate::retained_tree::RetainedElement) -> bool {
 /// non-text sibling between two text leaves ends the run for search but would
 /// not end it for copy.
 pub fn group_id(tree: &RetainedTree, id: u64) -> Option<u64> {
+    let mut ancestor = Some(id);
+    while let Some(current) = ancestor.and_then(|id| tree.elements.get(&id)) {
+        if current
+            .custom_props
+            .get("inlineFlow")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            return Some(current.id);
+        }
+        ancestor = current.parent;
+    }
     let element = tree.elements.get(&id)?;
     if !is_text_leaf(element) {
         return None;
