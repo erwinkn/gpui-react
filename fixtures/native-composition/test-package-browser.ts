@@ -75,7 +75,7 @@ try {
     for (const backend of ["webgpu", "webgl"]) {
       await browser("open", `${server.url}?entry=${entry}&backend=${backend}`)
       await browser("wait", "--fn", "Boolean(globalThis.packageProbe && globalThis.gpuix)")
-      const { result } = await waitFor(() => browser("eval", `(async()=>({info:globalThis.packageProbe, bounds:(await globalThis.gpuix.getByTestId('package-probe').all())[0]?.bounds, viewport:innerWidth, canvas:{width:document.querySelector('canvas').width,rect:document.querySelector('canvas').getBoundingClientRect().toJSON()}, resources:performance.getEntriesByType('resource').map(x=>x.name)}))()`), value => value.result.bounds?.width === 64)
+      const { result } = await waitFor(() => browser("eval", `(async()=>({info:globalThis.packageProbe, bounds:(await globalThis.gpuix.getByTestId('package-probe').all())[0]?.bounds, viewport:innerWidth, canvas:{width:document.querySelector('canvas').width,rect:document.querySelector('canvas').getBoundingClientRect().toJSON()}, resources:performance.getEntriesByType('resource').map(x=>x.name)}))()`), value => value.result.bounds?.width === 64 && value.result.canvas.width > 1)
       assert.equal(result.info.extensions.length, entry === "selected" ? 1 : 0)
       assert.equal(result.bounds.width, 64)
       if (entry === "selected") assert(!result.resources.some((url: string) => url.includes("gpuix-web")), "Selected binding fetched default WASM")
@@ -84,9 +84,9 @@ try {
       await browser("screenshot", screenshot)
       const image = PNG.sync.read(readFileSync(screenshot))
       const factor = image.width / result.viewport
-      const canvasFactor = result.canvas.rect.width / result.canvas.width
-      const x = Math.floor((result.canvas.rect.x + 32 * canvasFactor) * factor)
-      const y = Math.floor((result.canvas.rect.y + 32 * canvasFactor) * factor)
+      const x = Math.floor((result.canvas.rect.x + 32) * factor)
+      const y = Math.floor((result.canvas.rect.y + 32) * factor)
+      assert(x >= 0 && x < image.width && y >= 0 && y < image.height, `Pixel outside screenshot: ${x},${y}`)
       assert.deepEqual([...image.data.subarray((y * image.width + x) * 4, (y * image.width + x) * 4 + 4)], [0,255,0,255])
       assert.deepEqual((await browser("errors")).errors, [])
       assert(!(await browser("console")).messages.some((message: {type: string}) => message.type === "error"))

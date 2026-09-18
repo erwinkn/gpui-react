@@ -28,7 +28,7 @@ try {
       viewportWidth: innerWidth,
       info: globalThis.extensionProbe.info,
       defaultRequests: performance.getEntriesByType('resource').filter(entry=>entry.name.includes('/unexpected-default/')).length
-    }))()`), value => value.entry?.bounds?.width === 64)
+    }))()`), value => value.entry?.bounds?.width === 64 && value.canvas.width > 1)
     assert.equal(geometry.defaultRequests, 0)
     assert.equal(geometry.entry.bounds.width, 64)
     assert.deepEqual(geometry.info.extensions.map((item: {id: string}) => item.id), ["gpuix.example"])
@@ -41,11 +41,13 @@ try {
     }
     function pixel(image: PNG, x: number, y: number, expected: number[]) {
       const factor = image.width / geometry.viewportWidth
-      const canvasFactor = geometry.canvas.rect.width / geometry.canvas.width
-      const px = Math.floor((geometry.canvas.rect.x + (x + 0.5) * canvasFactor) * factor)
-      const py = Math.floor((geometry.canvas.rect.y + (y + 0.5) * canvasFactor) * factor)
+      // GPUI bounds are logical CSS pixels; screenshot scale already includes DPR.
+      const px = Math.floor((geometry.canvas.rect.x + x + 0.5) * factor)
+      const py = Math.floor((geometry.canvas.rect.y + y + 0.5) * factor)
+      assert(px >= 0 && px < image.width && py >= 0 && py < image.height, `Pixel outside screenshot: ${px},${py}`)
       const offset = (py * image.width + px) * 4
       const actual = [...image.data.subarray(offset, offset + 4)]
+      assert.equal(actual.length, 4)
       actual.forEach((channel, i) => assert(Math.abs(channel - expected[i]) <= 1, `${backend} pixel ${x},${y}: ${actual}, expected ${expected}`))
     }
     let image = screenshot("initial")
