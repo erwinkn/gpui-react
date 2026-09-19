@@ -37,6 +37,8 @@ cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --exam
 cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example document_visual
 cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example deferred_document_visual
 cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example selection_toolbar_visual
+cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example geometry_visual
+cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example modal_visual
 cargo clippy --manifest-path crates/gpui-react-controls/Cargo.toml --release --all-targets -- -D warnings
 ```
 
@@ -139,3 +141,20 @@ draw, including the first one after a width or font change. It also checks nativ
 double-click selection, button clicks, clipboard, changed source, and clearing.
 It saves `/tmp/bridge-selection-toolbar.png`. This is a worked native composition,
 not a new built-in React control or a general menu implementation.
+
+
+Two further native compositions exercise geometry and interaction boundaries.
+[The menu and connector example](./examples/geometry_visual.rs) uses GPUI's
+`anchored().match_parent_width()` and current painted card bounds. It checks
+every draw during resize, native click/Enter selection events, Escape, focus
+return, outside dismissal, and connector pixels at their expected coordinates.
+The window-pixel conversion comes from actual screenshot and viewport sizes.
+
+[The nested-modal example](./examples/modal_visual.rs) uses normal deferred GPUI
+layers and focus handles. It checks that the top backdrop blocks mouse delivery
+to a covered button, Tab remains in the active dialog, Escape restores the prior
+focus, and overflowing content stays clipped. It also reads GPUI's accessibility
+tree to check dialog roles, active modality, disabled underlying content, focus,
+and removal. Each fixture dialog has one focus owner; this is not a general
+multi-control focus-trap implementation. The examples save
+`/tmp/bridge-native-{geometry,menu,modals}.png`. All windows remain off screen.

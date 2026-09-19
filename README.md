@@ -44,6 +44,8 @@ callbacks again. Native views can read `Document::selected_range(key, text)` and
 `DocumentText::layout()` to build UI from the current native selection and GPUI
 layout. The [selection-toolbar example](./crates/gpui-react-controls/examples/selection_toolbar_visual.rs)
 checks placement in every draw while text width and font size change.
+Further native examples cover a trigger-width popup, card connectors, and nested
+modals with focus, clipping, input blocking, and accessibility checks.
 [Count-update measurements](./docs/bridge-list-performance.md) compare the native
 list binding with direct GPUI and document the range-based height-index update.
 Native command errors do not undo earlier state changes. The host invalidates

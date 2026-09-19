@@ -577,3 +577,19 @@ example, and the existing document GPU suite pass. The saved toolbar image was
 inspected. The example keeps the window off screen. No GPUI change was needed.
 I stand behind these two small native APIs and the composition test. Menu and
 connector cases, broader performance evidence, and distribution remain open.
+
+### Native popup, connector, and nested-modal cases
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Use normal GPUI anchored/deferred elements and focus handles in example views. | Add framework-level geometry transactions or another layout tree. | High | Native layout already provides the required relationships. Tests check current-frame popup width and focus after prop changes. No core or GPUI change was needed. |
+| Keep connector endpoints in small per-draw cells populated from actual card paint. | Retain a parallel graph of measured card descriptions. | High | These cells are recreated for each draw. The final canvas draws after the cards, and GPU pixels are checked along the current line using the actual image/viewport scale. |
+| Use explicit native modal layers, modality metadata, and one focus owner per fixture dialog. | Claim a complete reusable modal or focus-trap library. | High | The fixture verifies layering, covered-button input suppression, clipping, Tab confinement, nested Escape restoration, accessible focus and removal. It does not certify arbitrary focus traversal among many controls. |
+| Correct the accessibility assertion to read GPUI's actual `aria.role` field. | Change framework metadata to satisfy an incorrect test field. | High | The first modal probe failed because it expected a top-level `role`. Source inspection confirmed the debug JSON schema. The corrected assertion still requires the same Dialog role; no production behavior changed. |
+
+Both release GPU examples and strict all-target control Clippy pass. Their
+images were inspected. The menu tests pointer and keyboard selection events;
+the modal checks actual underlay mouse delivery, not only a guarded click
+counter. I stand behind these composition tests. They complete the planned
+native geometry examples. Full-frame performance comparisons, package
+distribution, and the final requirement audit remain open.

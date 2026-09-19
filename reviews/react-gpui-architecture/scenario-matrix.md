@@ -126,8 +126,12 @@ floating text outside parent bounds, nested documents, native selection,
 clipboard, and removal. The selection-toolbar example now checks native double-click selection,
 current-frame placement after wrapping/font changes, button hit testing,
 clipboard, changed source, and clearing. Its position comes from the same GPUI
-text layout used to paint the selected text. Menu and connector cases remain
-open.
+text layout used to paint the selected text. The menu/connector example now
+checks trigger-width matching and current card endpoints on each draw during
+resize, plus focus, native activation, dismissal, and GPU pixels. The nested-modal
+example checks deferred ordering, input blocking, clipping, focus restoration,
+and accessibility state. These native compositions exercise the baseline through
+the same bridge traits; they do not add application widgets to framework core.
 
 React documents the browser measure/correct-before-paint pattern in [useLayoutEffect](https://react.dev/reference/react/useLayoutEffect). Keeping the hook's React execution order does not give this renderer a fresh synchronous native measurement API.
 
