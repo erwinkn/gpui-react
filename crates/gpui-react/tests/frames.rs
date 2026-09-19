@@ -100,3 +100,147 @@ fn nested_hosts_restore_the_paint_scope_without_a_layout_box(cx: &mut TestAppCon
         .update(cx, |host, window, cx| host.clear(window, cx))
         .unwrap();
 }
+
+// Deferred GPUI elements are painted after the ordinary root paint returns.
+// They still belong to the same native host and must keep its frame metadata.
+struct FloatingLayer(Entity<Probe>);
+impl Render for FloatingLayer {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .child(gpui::deferred(self.0.clone()).with_priority(2))
+            .on_painted(|_, window, cx| {
+                let info = current_frame(window, cx).unwrap();
+                cx.global_mut::<Observed>().0.push(info);
+            })
+    }
+}
+struct DeferredProbe(Entity<FloatingLayer>);
+impl Render for DeferredProbe {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui::deferred(self.0.clone())
+    }
+}
+impl ReactView for DeferredProbe {
+    type Props = ();
+    fn create(_: (), _: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self(cx.new(|cx| FloatingLayer(cx.new(|_| Probe))))
+    }
+    fn set_props(&mut self, _: (), _: &mut Window, _: &mut Context<Self>) {}
+}
+#[gpui::test]
+fn deferred_native_views_keep_their_host_frame_context(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_global(Observed::default()));
+    let mut registry = Registry::default();
+    registry
+        .register(Component::<DeferredProbe>::new("floating"))
+        .unwrap();
+    let handle = cx.add_window(|_, _| Host::new(registry, Arc::new(|_| {})));
+    handle
+        .update(cx, |host, window, cx| {
+            host.apply(
+                serde_json::from_value(json!({"version":1,"sequence":1,"operations":[
+                    {"op":"create","id":1,"component":"floating","props":null},
+                    {"op":"place","parent":null,"child":1,"before":null}
+                ]}))
+                .unwrap(),
+                window,
+                cx,
+            )
+            .unwrap();
+        })
+        .unwrap();
+    cx.update_window(handle.into(), |_, window, cx| {
+        cx.global_mut::<Observed>().0.clear();
+        window.draw(cx).clear(cx);
+        let observed = &cx.global::<Observed>().0;
+        assert_eq!(observed.len(), 2);
+        assert!(observed.iter().all(|info| info.commit == 1));
+        assert_eq!(observed[0].root, observed[1].root);
+        assert_eq!(observed[0].frame, observed[1].frame);
+        assert!(current_frame(window, cx).is_none());
+    })
+    .unwrap();
+    handle
+        .update(cx, |host, window, cx| host.clear(window, cx))
+        .unwrap();
+}
+
+struct DeferredNested(Entity<Host>);
+impl Render for DeferredNested {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui::deferred(self.0.clone())
+    }
+}
+impl ReactView for DeferredNested {
+    type Props = ();
+    fn create(_: (), window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let nested = cx.new(|cx| Nested::create((), window, cx));
+        Self(nested.read(cx).0.clone())
+    }
+    fn set_props(&mut self, _: (), _: &mut Window, _: &mut Context<Self>) {}
+    fn unmounting(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.0.update(cx, |host, cx| host.clear(window, cx));
+    }
+}
+#[gpui::test]
+fn deferred_nested_hosts_keep_distinct_scopes_across_draws(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_global(Observed::default()));
+    let mut registry = Registry::default();
+    registry
+        .register(Component::<DeferredNested>::new("nested"))
+        .unwrap();
+    registry
+        .register(Component::<DeferredProbe>::new("floating"))
+        .unwrap();
+    let handle = cx.add_window(|_, _| Host::new(registry, Arc::new(|_| {})));
+    handle
+        .update(cx, |host, window, cx| {
+            host.apply(
+                serde_json::from_value(json!({"version":1,"sequence":1,"operations":[
+                    {"op":"create","id":1,"component":"nested","props":null},
+                    {"op":"place","parent":null,"child":1,"before":null},
+                    {"op":"create","id":2,"component":"floating","props":null},
+                    {"op":"place","parent":null,"child":2,"before":null}
+                ]}))
+                .unwrap(),
+                window,
+                cx,
+            )
+            .unwrap();
+        })
+        .unwrap();
+    let mut previous_frame = None;
+    for sequence in 2..=3 {
+        handle
+            .update(cx, |host, window, cx| {
+                host.apply(
+                    serde_json::from_value(
+                        json!({"version":1,"sequence":sequence,"operations":[]}),
+                    )
+                    .unwrap(),
+                    window,
+                    cx,
+                )
+                .unwrap();
+            })
+            .unwrap();
+        cx.update_window(handle.into(), |_, window, cx| {
+            cx.global_mut::<Observed>().0.clear();
+            window.draw(cx).clear(cx);
+            let observed = &cx.global::<Observed>().0;
+            assert_eq!(observed.len(), 3);
+            assert_eq!(observed[0].commit, 2);
+            assert_ne!(observed[0].root, observed[1].root);
+            assert_eq!(observed[1].root, observed[2].root);
+            assert_eq!(observed[1].commit, sequence);
+            assert_eq!(observed[2].commit, sequence);
+            assert!(previous_frame.is_none_or(|frame| observed[1].frame > frame));
+            previous_frame = Some(observed[1].frame);
+            assert!(current_frame(window, cx).is_none());
+        })
+        .unwrap();
+    }
+    handle
+        .update(cx, |host, window, cx| host.clear(window, cx))
+        .unwrap();
+}

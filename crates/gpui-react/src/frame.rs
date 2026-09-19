@@ -1,8 +1,9 @@
 use gpui::{
-    AnyElement, App, Bounds, Element, ElementId, Global, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, Pixels, Window, WindowId,
+    AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
+    LayoutId, Pixels, Window,
 };
 use serde::Serialize;
+use std::rc::Rc;
 
 /// Identifies the native draw that produced a measurement. This is a GPUI draw,
 /// not evidence that the OS presented the pixels on a physical display.
@@ -17,24 +18,18 @@ pub struct FrameInfo {
     pub viewport_height: f32,
     pub scale_factor: f32,
 }
-#[derive(Clone, Copy, Default)]
-struct ActiveFrame(Option<(WindowId, FrameInfo)>);
-impl Global for ActiveFrame {}
-
-/// Available during paint below a Host. Outside that scope, returns None.
-/// A native component can attach this to its own painted geometry or text data.
-pub fn current_frame(window: &Window, cx: &App) -> Option<FrameInfo> {
-    cx.try_global::<ActiveFrame>()?
-        .0
-        .filter(|(id, _)| *id == window.window_handle().window_id())
-        .map(|(_, frame)| frame)
+/// Available while drawing elements below a Host, including deferred elements.
+/// Outside that scope, returns None. Attach it to geometry during paint; earlier
+/// lifecycle phases do not prove that an element will reach the painted frame.
+pub fn current_frame(window: &Window, _cx: &App) -> Option<FrameInfo> {
+    window.element_context::<FrameInfo>().copied()
 }
 
-/// Delegates the element lifecycle without adding a layout box. The paint scope
+/// Delegates the element lifecycle without adding a layout box. The draw scope
 /// nests correctly if an application embeds more than one Host in a window.
 pub(crate) struct FrameScope {
     pub child: AnyElement,
-    pub info: FrameInfo,
+    pub info: Rc<FrameInfo>,
 }
 impl Element for FrameScope {
     type RequestLayoutState = ();
@@ -52,7 +47,10 @@ impl Element for FrameScope {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
-        (self.child.request_layout(window, cx), ())
+        let layout = window.with_element_context(self.info.clone(), |window| {
+            self.child.request_layout(window, cx)
+        });
+        (layout, ())
     }
     fn prepaint(
         &mut self,
@@ -63,7 +61,9 @@ impl Element for FrameScope {
         window: &mut Window,
         cx: &mut App,
     ) {
-        self.child.prepaint(window, cx);
+        window.with_element_context(self.info.clone(), |window| {
+            self.child.prepaint(window, cx);
+        });
     }
     fn paint(
         &mut self,
@@ -75,15 +75,9 @@ impl Element for FrameScope {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if !cx.has_global::<ActiveFrame>() {
-            cx.set_global(ActiveFrame::default());
-        }
-        let previous = cx
-            .global_mut::<ActiveFrame>()
-            .0
-            .replace((window.window_handle().window_id(), self.info));
-        self.child.paint(window, cx);
-        cx.global_mut::<ActiveFrame>().0 = previous;
+        window.with_element_context(self.info.clone(), |window| {
+            self.child.paint(window, cx);
+        });
     }
 }
 impl IntoElement for FrameScope {

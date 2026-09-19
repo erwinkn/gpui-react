@@ -475,14 +475,14 @@ impl Render for Host {
                 .size_full()
                 .children(self.visible(&self.roots))
                 .into_any_element(),
-            info: crate::FrameInfo {
+            info: std::rc::Rc::new(crate::FrameInfo {
                 root: cx.entity_id().as_u64(),
                 frame: self.frame,
                 commit: self.sequence,
                 viewport_width: window.viewport_size().width.into(),
                 viewport_height: window.viewport_size().height.into(),
                 scale_factor: window.scale_factor(),
-            },
+            }),
         }
     }
 }

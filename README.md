@@ -36,6 +36,11 @@ Delayed replacements require the input revision. Lists can use a bounded React
 row window over 100,000 logical rows, with missing-row requests and ordered
 scroll anchors. Horizontal panes can share one native scroll handle. Painted
 geometry includes the native root, draw, transaction, viewport, and scale.
+`current_frame(window, cx)` preserves that metadata through ordinary GPUI
+`deferred` elements and nested hosts. It is available during drawing, and absent
+from later commands and queries. Record bounds during paint; speculative layout
+is not proof that an element was painted. Cached paint replay does not run those
+callbacks again.
 [Count-update measurements](./docs/bridge-list-performance.md) compare the native
 list binding with direct GPUI and document the range-based height-index update.
 Native command errors do not undo earlier state changes. The host invalidates

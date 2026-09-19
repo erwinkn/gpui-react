@@ -502,3 +502,34 @@ GPUI crate. The owner reports all seven default native suites and the full app
 worker/installed-library checks pass. Browser suites pass at the earlier
 `af4ee6d` WASM pin; CI is rebuilding at the new pin. I stand behind this test
 correction and compatibility checkpoint. The broader framework goal is open.
+
+### Frame metadata through ordinary deferred GPUI views
+
+A failing native regression showed that `current_frame` returned `None` inside
+an ordinary `gpui::deferred` view. GPUI paints it after the enclosing Host paint
+callback has returned. An App global set only during that callback cannot follow
+this lifecycle.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Add a general typed element drawing context to GPUI and use it for frame metadata. | Require every native component to capture and forward bridge-specific frame data through its own deferred views. | Medium | This adds a public GPUI API. It must remain a scoped drawing facility, without taking on component state, layout, or cache invalidation. Local source and upstream issue/PR searches found no equivalent API. |
+| Capture context handles at `defer_draw`, then restore them for deferred prepaint and paint. | Keep the last Host metadata in a window-global slot until the frame ends. | High | A last-value slot confuses nested or sibling hosts. Tests use ordinary views, nested deferred draws, distinct nested hosts, successive commits, and scope restoration. |
+| Store one `Rc<FrameInfo>` per Host render and small stacks of shared handles. | Copy metadata into each component or index every GPUI descendant entity. | High | The record and deferred captures stay alive as long as GPUI retains their draw records. They contain no component descriptions. This adds one small allocation per Host render; it is not a frame-time performance claim. |
+| Preserve GPUI cache semantics and document them. | Force every cache to repaint so measurement callbacks run. | High | Cached paint replay still skips callbacks and can retain old context records. Callers must invalidate cached content when context changes affect it. A direct test checks repeated cache reuse, no duplicate paint callbacks, and repaint after invalidation. |
+| Make metadata available throughout element drawing, but require paint-time capture for reported geometry. | Expose it only during paint. | High | Deferred children are registered during prepaint. Metadata seen during speculative layout is not proof that the element was painted. Later async commands and queries see no active scope. |
+
+The original regression failed before the change. All 16 binding tests and all
+three GPUI deferred-draw tests pass after it. The GPUI build reports an existing
+unused `NSRect` import in `gpui_macos` and the existing `block` future-compatibility
+warning. No platform behavior or application source was changed for those warnings.
+
+I stand behind this metadata fix. It does not finish the menu, connector, or
+selection-toolbar acceptance cases. `Document` has its own paint registry and
+scope lifetime; deferred document text still needs a failing regression and a
+separate fix. This context API alone does not make that registry correct.
+
+The strict all-target binding Clippy check also passes. The standard-control
+suite passes 46 tests, with one manual benchmark intentionally ignored. GPUI
+commit `1ec60cb6a3683fad4f49cd492afcb04463e789b8` is published separately. Pierre
+keeps its fully tested `5f5de7b` framework pin; this metadata change does not
+silently move that consumer onto a new GPUI revision.

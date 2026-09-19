@@ -115,6 +115,14 @@ This is a state ownership problem under every proposed tree design. The current 
 
 Cherry's workflow canvas already shows the first approach for a harder case: nodes resolve geometry in native prepaint, then connectors read those anchors during paint. Selection toolbars use native selection geometry. These are normal GPUI component techniques, not worker layout or a replacement renderer. [Geometry and component history][cherry-native].
 
+The new binding's frame tests now cover ordinary GPUI deferred elements,
+nested deferred hosts, and frame metadata across later draws. A general GPUI
+element context carries each host's metadata through deferred prepaint and
+paint. It adds no layout box and does not run a second layout engine. Cache
+replay does not repeat measurement callbacks. This validates the metadata
+boundary; menu, connector, and selection-toolbar interaction cases still need
+their complete native component checks.
+
 React documents the browser measure/correct-before-paint pattern in [useLayoutEffect](https://react.dev/reference/react/useLayoutEffect). Keeping the hook's React execution order does not give this renderer a fresh synchronous native measurement API.
 
 For an arbitrary JS calculation, use an asynchronous query and permit a later correction, or keep an application surface hidden until it is ready. Such staging is a component policy, not a general promise that layout effects prevent intermediate native frames. The agreed design does not use a synchronous UI wait to emulate the browser contract.

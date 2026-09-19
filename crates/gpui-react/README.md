@@ -95,7 +95,17 @@ outside bridge transactions still use the component's ordinary GPUI cache APIs.
 A native component can call `current_frame(window, cx)` during paint. Below a
 `Host`, it returns `FrameInfo` with the host identity, draw number, incorporated
 transaction, viewport size, and scale factor. It returns `None` outside that
-paint scope. Nested hosts restore the enclosing scope. The scope delegates the
-normal element lifecycle without adding a layout box. These records identify
-native paint work, not physical OS presentation. A component should retain the
-record with its measured bounds, rather than read it later during a query.
+draw scope. This includes ordinary GPUI deferred elements and nested deferred
+hosts. Nested hosts restore the enclosing scope. The scope delegates the normal
+element lifecycle without adding a layout box. Metadata is also available in
+request-layout and prepaint, but those phases do not prove that an element will
+be painted. Record measurements during paint. These records identify native draw
+work, not physical OS presentation. Retain the record with measured bounds;
+reading it later during a query returns `None`.
+
+GPUI's general typed drawing context carries this metadata through deferred
+draws. The binding stores one shared frame record per host render. It does not
+retain a second component tree. Context changes do not invalidate native view
+caches. Replayed paint does not run measurement callbacks again, so saved
+measurements still identify their original draw. A native component that needs
+new measurements must invalidate its cached content.
