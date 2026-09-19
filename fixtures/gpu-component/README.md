@@ -81,9 +81,9 @@ this small fixture does not claim that allocation policy is optimal for video.
 Run the Metal pixel and resource checks from the repository root:
 
 ```sh
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo run --manifest-path fixtures/bridge-gpu-component/Cargo.toml --release --example visual
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo test --manifest-path fixtures/bridge-gpu-component/Cargo.toml --release
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo clippy --manifest-path fixtures/bridge-gpu-component/Cargo.toml --release --all-targets -- -D warnings
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo run --manifest-path fixtures/gpu-component/Cargo.toml --release --example visual
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo test --manifest-path fixtures/gpu-component/Cargo.toml --release
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo clippy --manifest-path fixtures/gpu-component/Cargo.toml --release --all-targets -- -D warnings
 ```
 
 The example keeps its window offscreen. It checks exact pixels for HDR blending,
@@ -92,7 +92,7 @@ also checks clicks, shared text, resource retention and release, native
 transitions, retargeting, cancellation, both reduced-motion settings, and idle
 frame requests. Its image is `/tmp/bridge-gpu-initial.png`.
 
-The [application composition](../bridge-counter/README.md) includes this crate
+The [application composition](../counter/README.md) includes this crate
 and wrapper. Its source and relocated executable tests check the worker path.
 With `interaction-tests`, a native driver verifies that the producer creates
 new resources and changes GPU pixels while the React worker is synchronously

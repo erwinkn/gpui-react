@@ -14,10 +14,12 @@ child and obtain its `Focusable` handle through GPUI. Native code can use
 The React binding implements the standard optional bridge traits; it does not
 replace the control's `Render` implementation.
 
-For React, call `gpui_react_controls::register(registry)` from the composition's
-registration function. This registers `input`, `container`, `text`, `list`, and `document` with their supported capabilities.
-Import its wrapper from `@gpui-react/controls`. See the
-[JavaScript contract](../../packages/bridge-controls/README.md) for every prop,
+The default composition in `gpui-react-runtime` always calls
+`gpui_react::register_builtins(registry)` before its own registrations; a
+composition that builds its own registry calls it the same way. This registers
+`input`, `container`, `text`, `list`, and `document` with their supported capabilities.
+Import its wrappers from `@gpui-react/core`. See the
+[JavaScript contract](../../packages/core/CONTROLS.md) for every prop,
 event, command, and style field.
 
 Input editing behavior was extracted from the existing native editor after its
@@ -33,20 +35,20 @@ accessibility values, scroll consumption, ancestor callbacks, and boundary
 chaining. It saves `/tmp/bridge-input.png`.
 
 ```sh
-cargo test --manifest-path crates/gpui-react-controls/Cargo.toml --release
-cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example input_visual
-cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example container_visual
-cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example list_visual
-cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example document_visual
-cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example deferred_document_visual
-cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example selection_toolbar_visual
-cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example geometry_visual
-cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example modal_visual
-cargo clippy --manifest-path crates/gpui-react-controls/Cargo.toml --release --all-targets -- -D warnings
+cargo test --manifest-path crates/gpui-react/Cargo.toml --release
+cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example input_visual
+cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example container_visual
+cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example list_visual
+cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example document_visual
+cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example deferred_document_visual
+cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example selection_toolbar_visual
+cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example geometry_visual
+cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example modal_visual
+cargo clippy --manifest-path crates/gpui-react/Cargo.toml --release --all-targets -- -D warnings
 ```
 
 The GPU test is currently macOS-only. It does not measure physical display
-latency. The [worker fixture](../../fixtures/bridge-counter/README.md) also checks
+latency. The [worker fixture](../../fixtures/counter/README.md) also checks
 this input through React in source and relocated compiled applications.
 
 The container scenario checks outer geometry, inherited layout changes, ordinary
@@ -64,7 +66,7 @@ inside the document, including across virtual row remounts. The helper uses
 GPUI `StyledText` and its shaped line layouts. It performs no second text layout.
 
 ```rust
-use gpui_react_controls::document_text;
+use gpui_react::document_text;
 
 // In an ordinary GPUI Render implementation:
 div().child(document_text("message-42/body", "Hello reader"))

@@ -18,16 +18,27 @@ React (Worker Thread)  -->  Typed Transactions  -->  Host Entity (Main UI Thread
 
 ### Rust Crates (`crates/`)
 
-- `crates/gpui-react`: Core bridge crate. Provides the `Host` entity, dense node storage, transaction decoding, frame metadata (`current_frame`), and component traits (`ReactView`, `ReactElement`, `ReactEvents`, `ReactCommands`, `ReactQueries`, `ReactChildren`).
-- `crates/gpui-react-controls`: Five standard native controls (`Document`, `VirtualList`, `Container`, `Text`, `Input`), style parsing, and registry installation.
-- `crates/gpui-react-host`: Native application loop for macOS AppKit (`NSApplication::run`) and N-API worker communication channel.
-- `crates/gpui-react-runtime`: Default native composition library that compiles the macOS arm64 `.node` binary for the standard controls.
+- `crates/gpui-react`: Core bridge crate and the five standard native controls (`Document`, `VirtualList`, `Container`, `Text`, `Input`). Provides the `Host` entity, dense node storage, transaction decoding, frame metadata (`current_frame`), the component traits (`ReactView`, `ReactElement`, `ReactEvents`, `ReactCommands`, `ReactQueries`, `ReactChildren`), style parsing, and `register_builtins`.
+- `crates/gpui-react-macros`: `ComponentProps` derive macro for props wire schemas.
+- `crates/gpui-react-runtime`: Native application loop for macOS AppKit (`NSApplication::run`), the N-API worker communication channel, and the default composition that builds the macOS arm64 `.node` binary. It builds both an `rlib` and a `cdylib`.
 
 ### JavaScript Packages (`packages/`)
 
-- `packages/bridge` (`@gpui-react/core`): React 19 reconciler for GPUI. Provides `createRoot`, `nativeComponent`, transaction transport, and application entry helpers (`runApplication`, `attachApplication`).
-- `packages/bridge-controls` (`@gpui-react/controls`): Typed React wrappers and refs for the standard controls (`Document`, `List`, `Container`, `Text`, `Input`).
-- `packages/bridge-runtime` (`@gpui-react/runtime`): Default runtime package that bundles the compiled native `.node` binary for macOS arm64.
+- `packages/core` (`@gpui-react/core`): React 19 reconciler for GPUI plus the typed React wrappers and refs for the standard controls (`Document`, `List`, `Container`, `Text`, `Input`). Provides `createRoot`, `nativeComponent`, transaction transport, and application entry helpers (`runApplication`, `attachApplication`).
+- `packages/runtime` (`@gpui-react/runtime`): Default runtime package that bundles the compiled native `.node` binary for macOS arm64.
+
+### Application Shapes
+
+A pure React application installs `@gpui-react/core` and `@gpui-react/runtime`
+and needs no Rust toolchain: the runtime package ships the compiled native
+library, and `host.ts` imports `bindings` from `@gpui-react/runtime`.
+
+An application with its own native components adds a `native/` crate that
+depends on `gpui-react` and `gpui-react-runtime`, registers its components in
+one `#[napi_derive::module_init]` through `register_components`, and builds a
+`cdylib`. Its `host.ts` points at that crate's own `.node` file. Built-in
+controls are always registered, so the composition only adds its own kinds.
+[`fixtures/counter`](./fixtures/counter/README.md) is the reference for this second shape.
 
 ## Standard Controls
 
@@ -118,58 +129,31 @@ objects for tests and tools. The native runtime version is 2.
 
 ### Build Rust Crates
 
-Use the standard flags for every Cargo command:
+Use the standard flags for every Cargo command. The repository is one Cargo
+workspace rooted at `Cargo.toml`.
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo test --manifest-path crates/gpui-react/Cargo.toml
+  cargo test --workspace
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo test --manifest-path crates/gpui-react-controls/Cargo.toml
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo test --manifest-path crates/gpui-react-host/Cargo.toml
+  cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
-Check the runtime and fixtures:
+Check the fixture feature graphs that a plain workspace build does not use:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path crates/gpui-react-runtime/Cargo.toml
+  cargo check -p gpui-react-frame-cost --features allocation-counts
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path fixtures/bridge-performance/Cargo.toml
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path fixtures/bridge-performance/Cargo.toml --features allocation-counts
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path fixtures/bridge-gpu-component/Cargo.toml
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path fixtures/bridge-counter/Cargo.toml
-```
-
-Run Clippy:
-
-```sh
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-controls/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-host/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-runtime/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path fixtures/bridge-performance/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path fixtures/bridge-gpu-component/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path fixtures/bridge-counter/Cargo.toml -- -D warnings
+  cargo check -p gpui-react-texture-example
 ```
 
 ### Build and Test JavaScript Packages
 
 ```sh
 bun install
-bun run --cwd packages/bridge build
-bun run --cwd packages/bridge test
-bun run --cwd packages/bridge-controls build
+bun run build
+bun run test
 ```
 
 ## Running Examples and Visual Fixtures
@@ -178,19 +162,19 @@ Run the visual examples. Windows open inactive and stay in the background:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --example document_visual
+  cargo run -p gpui-react --example document_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --example container_visual
+  cargo run -p gpui-react --example container_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --example list_visual
+  cargo run -p gpui-react --example list_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --example geometry_visual
+  cargo run -p gpui-react --example geometry_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --example selection_toolbar_visual
+  cargo run -p gpui-react --example selection_toolbar_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --example deferred_document_visual
+  cargo run -p gpui-react --example deferred_document_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run --manifest-path fixtures/bridge-gpu-component/Cargo.toml --example visual
+  cargo run -p gpui-react-texture-example --example visual
 ```
 
 ## Running Fixtures
@@ -201,15 +185,15 @@ Build the counter composition binary and run its automated test:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo build --manifest-path fixtures/bridge-counter/Cargo.toml --release
-cp /tmp/gpui-react-target/release/libgpui_react_counter_example.dylib fixtures/bridge-counter/counter.node
-bun fixtures/bridge-counter/test.ts
+  cargo build -p gpui-react-counter-example --release
+cp /tmp/gpui-react-target/release/libgpui_react_counter_example.dylib fixtures/counter/counter.node
+bun fixtures/counter/test.ts
 ```
 
 Run the interactive counter demo (window stays open):
 
 ```sh
-bun fixtures/bridge-counter/demo-host.ts
+bun fixtures/counter/demo-host.ts
 ```
 
 ### Package Packaging Fixture
@@ -217,8 +201,8 @@ bun fixtures/bridge-counter/demo-host.ts
 Create package archives and verify installation in an isolated directory:
 
 ```sh
-bun scripts/package-bridge.ts 0.1.0-bridge.1 /tmp/bridge-archives --allow-dirty
-bun scripts/test-bridge-packages.ts /tmp/bridge-archives
+bun scripts/package.ts 0.1.0-bridge.1 /tmp/bridge-archives --allow-dirty
+bun scripts/test-packages.ts /tmp/bridge-archives
 ```
 
 ## Benchmarks and Reports
@@ -229,7 +213,7 @@ Compare native frame times and heap allocations between raw GPUI and the bridge:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  bun scripts/measure-bridge-frames.ts /tmp/gpui-react-frame-cost
+  bun scripts/measure-frames.ts /tmp/gpui-react-frame-cost
 ```
 
 - Report: [`docs/bridge-frame-cost.md`](./docs/bridge-frame-cost.md)
@@ -242,7 +226,7 @@ worker. Use React's production build; the development build doubles the render:
 
 ```sh
 /tmp/gpui-react-target/release/gpui-react-frame-cost schema > /tmp/gpui-react-wire/schema.json
-NODE_ENV=production BRIDGE_WIRE=binary bun fixtures/bridge-counter/js-bench.tsx 5000 list 5
+NODE_ENV=production BRIDGE_WIRE=binary bun fixtures/counter/js-bench.tsx 5000 list 5
 ```
 
 `BRIDGE_WIRE` selects `json` or `binary`. For sub-millisecond comparisons,
@@ -263,21 +247,20 @@ Count-update measurements and height-index update analysis:
 
 ```
 .
+├── Cargo.toml                   # Root Cargo workspace
 ├── crates/
-│   ├── gpui-react/              # Core Host, node tables, protocol, traits
-│   ├── gpui-react-controls/     # Five standard native controls
-│   ├── gpui-react-host/         # macOS AppKit loop and N-API transport
-│   └── gpui-react-runtime/      # Default native composition dylib
+│   ├── gpui-react/              # Core Host, node tables, protocol, traits, controls
+│   ├── gpui-react-macros/       # ComponentProps derive
+│   └── gpui-react-runtime/      # macOS AppKit loop, N-API transport, default composition
 ├── packages/
-│   ├── bridge/                  # React reconciler and application launcher
-│   ├── bridge-controls/         # React wrappers for standard controls
-│   └── bridge-runtime/          # Bundled macOS arm64 native runtime
+│   ├── core/                    # React reconciler and control wrappers
+│   └── runtime/                 # Bundled macOS arm64 native runtime
 ├── fixtures/
-│   ├── bridge-counter/          # E2E counter fixture and interactive demo
-│   ├── bridge-gpu-component/    # Metal texture integration fixture
-│   ├── bridge-package/          # Tarball verification fixture
-│   ├── bridge-performance/      # Frame timing and memory comparison
-│   └── bridge-pierre/           # External viewport probe
+│   ├── counter/                 # E2E counter fixture and interactive demo
+│   ├── gpu-component/           # Metal texture integration fixture
+│   ├── package/                 # Tarball verification fixture
+│   ├── performance/             # Frame timing and memory comparison
+│   └── pierre/                  # External viewport probe
 ├── docs/                        # Performance reports and benchmark data
 ├── reviews/                     # Architecture review history
 ├── scripts/                     # Packaging, benchmark, and build scripts

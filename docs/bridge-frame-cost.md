@@ -1,6 +1,6 @@
 # Native frame and heap comparison
 
-Release measurements from the [frame comparison fixture](../fixtures/bridge-performance/README.md)
+Release measurements from the [frame comparison fixture](../fixtures/performance/README.md)
 on an Apple M5 Max, macOS 26.6.2, Rust 1.97.1, taken after the compact wire, the
 flat host tables, style ids, id reuse, placement folded into create, packed `Text`
 and `Container` rows with per-kind extras, the packed document text records, the
@@ -85,7 +85,7 @@ the first draw fell by about 17 MiB for the raw view and 20 MiB for the bridge a
 
 ## Worker side
 
-`fixtures/bridge-counter/js-bench.tsx` measures the same scene on the application
+`fixtures/counter/js-bench.tsx` measures the same scene on the application
 worker with a recording transport: React render and commit, sealing to the wire,
 the wire size, and the JavaScript heap. React's production build, Bun 1.4.2,
 medians of five in-process runs, checked across three processes; run-to-run noise
@@ -134,5 +134,5 @@ Reproduce with:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  bun scripts/measure-bridge-frames.ts /tmp/gpui-react-frame-cost
+  bun scripts/measure-frames.ts /tmp/gpui-react-frame-cost
 ```

@@ -94,76 +94,54 @@ CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo <command>
 
 ### Verification Commands
 
-#### Rust Crates
+#### Rust Workspace
 
-Test core crates:
-
-```sh
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo test --manifest-path crates/gpui-react/Cargo.toml
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo test --manifest-path crates/gpui-react-controls/Cargo.toml
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo test --manifest-path crates/gpui-react-host/Cargo.toml
-```
-
-Check the runtime and fixtures:
+Test the whole workspace, including the built-in controls and the default runtime:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path crates/gpui-react-runtime/Cargo.toml
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path fixtures/bridge-performance/Cargo.toml
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path fixtures/bridge-performance/Cargo.toml --features allocation-counts
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path fixtures/bridge-gpu-component/Cargo.toml
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo check --manifest-path fixtures/bridge-counter/Cargo.toml
+  cargo test --workspace
 ```
 
 Run Clippy:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react/Cargo.toml -- -D warnings
+  cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+Check the fixture feature graphs that a plain workspace build does not use:
+
+```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-macros/Cargo.toml -- -D warnings
+  cargo check -p gpui-react-frame-cost --features allocation-counts
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-controls/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-host/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-runtime/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path fixtures/bridge-performance/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path fixtures/bridge-gpu-component/Cargo.toml -- -D warnings
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo clippy --all-targets --all-features --manifest-path fixtures/bridge-counter/Cargo.toml -- -D warnings
+  cargo check -p gpui-react-texture-example
 ```
 
 #### JavaScript Packages
 
 ```sh
 bun install
-bun run --cwd packages/bridge build
-bun run --cwd packages/bridge test
-bun run --cwd packages/bridge-controls build
+bun run build
+bun run test
 ```
 
 #### End-to-End Counter Fixture
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo build --manifest-path fixtures/bridge-counter/Cargo.toml --release
-cp /tmp/gpui-react-target/release/libgpui_react_counter_example.dylib fixtures/bridge-counter/counter.node
-bun fixtures/bridge-counter/test.ts
+  cargo build -p gpui-react-counter-example --release
+cp /tmp/gpui-react-target/release/libgpui_react_counter_example.dylib fixtures/counter/counter.node
+bun fixtures/counter/test.ts
 ```
+
+`bun run verify` from the repository root runs the workspace tests, Clippy,
+the JavaScript build and tests, and this counter fixture in order.
 
 #### Frame Cost Measurement
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  bun scripts/measure-bridge-frames.ts /tmp/gpui-react-frame-cost
+  bun scripts/measure-frames.ts /tmp/gpui-react-frame-cost
 ```

@@ -7,8 +7,8 @@ This folder contains integration probes only. It is not an editor package.
 Build Pierre's native composition separately. Then run:
 
 ```sh
-bun fixtures/bridge-pierre/test.ts /path/to/libpierre_react_runtime.dylib
-bunx tsc -p fixtures/bridge-pierre/tsconfig.json
+bun fixtures/pierre/test.ts /path/to/libpierre_react_runtime.dylib
+bunx tsc -p fixtures/pierre/tsconfig.json
 ```
 
 The new-host probe runs both the source worker and a compiled Bun executable
@@ -27,7 +27,7 @@ paint without activating a window:
 # In the Pierre checkout:
 cargo build --release --locked -p pierre-react-runtime --features frame-probe
 # In this checkout:
-bun fixtures/bridge-pierre/test.ts /path/to/libpierre_react_runtime.dylib --frames
+bun fixtures/pierre/test.ts /path/to/libpierre_react_runtime.dylib --frames
 ```
 
 That test-only component draws from the native executor every 16 ms until

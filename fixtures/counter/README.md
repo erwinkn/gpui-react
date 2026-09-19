@@ -1,13 +1,13 @@
 # Native component composition with React bindings
 
 This composition links the new bridge host, an ordinary GPUI counter, and the
-new native controls, plus an [external GPU view](../bridge-gpu-component/README.md).
+new native controls, plus an [external GPU view](../gpu-component/README.md).
 Its `Render` implementation remains native. The small `ReactView` implementation
 maps props; optional traits expose typed events, commands and queries.
 
 ## Interactive example
 
-After the release build below, run `bun fixtures/bridge-counter/demo-host.ts`.
+After the release build below, run `bun fixtures/counter/demo-host.ts`.
 The window opens inactive. It contains a native input, a 500-row virtual list,
 document selection/search, an ordinary Rust counter, and a React heartbeat.
 Click **Pause JavaScript for 5 seconds**, then type, scroll, or click the native
@@ -25,11 +25,10 @@ From the repository root, build a release binary:
 
 ```sh
 bun install --frozen-lockfile
-bun run --cwd packages/bridge build
-bun run --cwd packages/bridge-controls build
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo build --manifest-path fixtures/bridge-counter/Cargo.toml --release
-cp /tmp/gpui-react-target/release/libgpui_react_counter_example.dylib fixtures/bridge-counter/counter.node
-bun fixtures/bridge-counter/test.ts
+bun run build
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo build -p gpui-react-counter-example --release
+cp /tmp/gpui-react-target/release/libgpui_react_counter_example.dylib fixtures/counter/counter.node
+bun fixtures/counter/test.ts
 ```
 
 The test keeps windows in the background and closes its own processes. It checks:
@@ -62,9 +61,9 @@ External editor examples remain a later validation stage.
 Build the optional test driver and enable its source and relocated-worker cases:
 
 ```sh
-CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo build --manifest-path fixtures/bridge-counter/Cargo.toml --release --features interaction-tests
-cp /tmp/gpui-react-target/release/libgpui_react_counter_example.dylib fixtures/bridge-counter/counter.node
-BRIDGE_INTERACTION_TESTS=1 bun fixtures/bridge-counter/test.ts
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo build -p gpui-react-counter-example --release --features interaction-tests
+cp /tmp/gpui-react-target/release/libgpui_react_counter_example.dylib fixtures/counter/counter.node
+BRIDGE_INTERACTION_TESTS=1 bun fixtures/counter/test.ts
 ```
 
 React mounts the ordinary `Input`, `List`, and `Text` wrappers plus the external
@@ -116,13 +115,13 @@ processes and removes its temporary files.
 Run the source cases alone after the optional native build:
 
 ```sh
-bun fixtures/bridge-counter/lifecycle-test.ts
-bun run --cwd fixtures/bridge-counter typecheck
+bun fixtures/counter/lifecycle-test.ts
+bun run --cwd fixtures/counter typecheck
 ```
 
 ## Worker-side benchmark
 
-`bun fixtures/bridge-counter/js-bench.tsx <rows> <list|flow> <repeats>` measures
+`bun fixtures/counter/js-bench.tsx <rows> <list|flow> <repeats>` measures
 React render and commit, sealing, wire size, and JavaScript heap for the frame
 comparison scene with a recording transport and no native code. `BENCH_MEMO=1`
 memoizes the rows, which is how an application would write them.

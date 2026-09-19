@@ -5,18 +5,19 @@ This crate supplies the macOS AppKit loop and N-API worker channel for
 The worker retains only a session handle and queued typed transactions. It does
 not retain a Rust description tree or live GPUI objects.
 
-The host is a Rust library. Only the application composition emits a `cdylib`
-and runs `napi_build::setup()` in its build script. This avoids an unqualified
-host library artifact overwriting another feature graph in a shared Cargo
-target directory. Run `bun scripts/check-bridge-builds.ts` from the repository
-root to alternate standalone host and test-composition builds in one directory.
-Set `CARGO_TARGET_DIR` to reuse an existing release target.
+The host is a Rust library inside `gpui-react-runtime`, which also builds the
+packaged `cdylib`. A custom application composition emits its own `cdylib` and
+runs `napi_build::setup()` in its build script. This avoids an unqualified
+layout overwriting another feature graph in a shared Cargo target directory.
+Run `bun scripts/check-builds.ts` from the repository
+root to alternate the counter composition and the default runtime builds in one
+directory. Set `CARGO_TARGET_DIR` to reuse an existing release target.
 
 A composition crate re-exports this crate's N-API methods and calls
 `register_components` from its module initializer. The function it registers
 fills a new `gpui-react::Registry` for each native host. Its ordinary GPUI
 component crates use the GPUI re-export so all types share one framework build.
-The [counter composition](../../fixtures/bridge-counter/README.md) is the
+The [counter composition](../../fixtures/counter/README.md) is the
 first complete example.
 
 The exported methods are `bridgeRuntimeVersion`, `NativeHost` with `id`, `run`
@@ -63,6 +64,6 @@ and event-queue overflow use the same cleanup path. Overflow remains an explicit
 failure, rather than a graceful result or silent loss of events.
 
 ```sh
-cargo test --manifest-path crates/gpui-react-host/Cargo.toml --release
-cargo clippy --manifest-path crates/gpui-react-host/Cargo.toml --release --all-targets -- -D warnings
+cargo test --manifest-path crates/gpui-react-runtime/Cargo.toml --release
+cargo clippy --manifest-path crates/gpui-react-runtime/Cargo.toml --release --all-targets -- -D warnings
 ```

@@ -1,6 +1,6 @@
 # Installed bridge package check
 
-`bun scripts/test-bridge-packages.ts /path/to/archives` installs the three
+`bun scripts/test-packages.ts /path/to/archives` installs the two
 archives in a temporary directory outside the workspace. It checks package
 hashes, Node and Bun loaders, ESM and CommonJS types, the browser error,
 and this hidden native application. It then compiles the application, removes

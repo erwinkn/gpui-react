@@ -1,9 +1,10 @@
 # React bindings for GPUI
 
-This crate provides the core host data structures and element rebuilding for
-the bridge. It depends on GPUI, Serde, and anyhow.
-[`gpui-react-host`](../gpui-react-host/README.md) supplies a native loop and
-worker transport separately.
+This crate provides the core host data structures, element rebuilding, and the
+five built-in native controls for the bridge. It depends on GPUI, Serde, and
+anyhow. [`gpui-react-runtime`](../gpui-react-runtime/README.md) supplies the
+native loop, the N-API worker transport, and the default composition. The
+controls are documented in [CONTROLS.md](./CONTROLS.md).
 
 ## One host, one tree
 
@@ -126,8 +127,10 @@ identify native draw work, not physical presentation. Recording geometry costs
 a paint callback per node per frame, so the standard controls make it opt-in.
 
 ```sh
-cargo test --manifest-path crates/gpui-react/Cargo.toml --release
-cargo clippy --manifest-path crates/gpui-react/Cargo.toml --release --all-targets -- -D warnings
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
+  cargo test -p gpui-react --release
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
+  cargo clippy -p gpui-react --release --all-targets -- -D warnings
 ```
 
 The tests use GPUI's test application and real entity and subscription

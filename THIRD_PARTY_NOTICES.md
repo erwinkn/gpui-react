@@ -2,7 +2,7 @@
 
 ## Ported source
 
-The text input component in `crates/gpui-react-controls/src/input.rs` and document selection in `crates/gpui-react-controls/src/document/selection.rs` adapt code from **[Comet](https://github.com/zeronsh/comet)** (MIT, Copyright (c) 2026 Wing).
+The text input component in `crates/gpui-react/src/input.rs` and document selection in `crates/gpui-react/src/document/selection.rs` adapt code from **[Comet](https://github.com/zeronsh/comet)** (MIT, Copyright (c) 2026 Wing).
 
 Input caret blinking, double-click selection, drag autoscroll, and undo behavior follow Comet's composer, reviewed at commit `b3fa51872f70c8f973c241b659cf0c166766f4f5`.
 

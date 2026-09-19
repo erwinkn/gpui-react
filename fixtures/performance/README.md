@@ -12,7 +12,7 @@ This fixture compares three native paths in one binary and one GPUI build:
   against the component schema.
 
 With `FRAME_BENCH_WIRE_DIR` set, both bridge modes mount the transaction the
-JavaScript bridge sealed for the scene (`fixtures/bridge-counter/js-wire-dump.tsx`
+JavaScript bridge sealed for the scene (`fixtures/counter/js-wire-dump.tsx`
 writes `mount-<scene>-<rows>.json` and `.bin`); the measuring script does this.
 Without it, `bridge` builds an equivalent JSON transaction in Rust and `binary`
 is unavailable. `gpui-react-frame-cost schema` prints the controls' kind table
@@ -62,7 +62,7 @@ the allocation counts. Timing results use a separate build without the counter.
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  bun scripts/measure-bridge-frames.ts /tmp/gpui-react-frame-cost
+  bun scripts/measure-frames.ts /tmp/gpui-react-frame-cost
 ```
 
 The script builds all three variants, then runs each mode in a separate process.
