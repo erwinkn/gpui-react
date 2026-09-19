@@ -2,7 +2,10 @@
 
 This is the React reconciler for GPUI. It includes an explicit macOS/Bun
 native host connection and can wrap ordinary GPUI views from a compiled
-composition. Standard controls and the default `@gpui-react/runtime` package
+composition. The package also exports the typed wrappers for the five built-in
+controls; their full prop, event, command, and style contract is in
+[CONTROLS.md](./CONTROLS.md). Standard controls and the default
+`@gpui-react/runtime` package
 are available in this repository. Release publication and broader performance
 checks remain in progress.
 

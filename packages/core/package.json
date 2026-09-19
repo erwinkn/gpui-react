@@ -8,7 +8,7 @@
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./application": { "types": "./dist/application.d.ts", "default": "./dist/application.js" }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": ["dist", "README.md", "CONTROLS.md", "LICENSE"],
   "scripts": { "build": "tsc", "test": "vitest run tests" },
   "dependencies": { "react-reconciler": "0.33.0" },
   "peerDependencies": { "react": "^19.2.0" },
