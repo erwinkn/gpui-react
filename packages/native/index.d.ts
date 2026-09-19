@@ -274,7 +274,7 @@ export declare class TestGpuixRenderer {
    * IMPORTANT: Call flush() before this — hit testing requires laid-out elements.
    * `modifiers` uses the `press()` syntax: "cmd", "cmd-shift", "alt".
    */
-  simulateClick(x: number, y: number, button?: number | undefined | null, modifiers?: string | undefined | null): void
+  simulateClick(x: number, y: number, button?: number | undefined | null, modifiers?: string | undefined | null, clickCount?: number | undefined | null): void
   /**
    * Simulate key strokes through GPUI's input pipeline.
    * Format: space-separated keys, e.g. "a", "enter", "cmd-shift-p".

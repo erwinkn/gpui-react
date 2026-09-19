@@ -40,5 +40,16 @@ try {
   assert.equal(JSON.parse(renderer.simulateInputMethod("ignored", true)).marked, null)
   assert.equal(JSON.parse(renderer.simulateInputMethod("ignored", false)).marked, null)
   assert.ok(renderer.getPaintedText().includes("abc你"))
-  console.log("PASS native input-method helper: missing focus, UTF-16 preedit selection, commit, handler restoration, events, undo, and read-only input")
+  renderer.applyBatch(JSON.stringify([["setCustomProp", 1, "value", "alpha beta"]]))
+  renderer.flush()
+  renderer.simulateClick(20, 20, 0, undefined, 2)
+  assert.deepEqual(JSON.parse(renderer.simulateInputMethod("ignored", false)).selected, [0, 5], "double click selects a word")
+  renderer.simulateClick(20, 20, 0, undefined, 3)
+  assert.deepEqual(JSON.parse(renderer.simulateInputMethod("ignored", false)).selected, [0, 10], "triple click selects the line")
+  renderer.simulateClick(20, 20, 0, undefined, 0)
+  const single = JSON.parse(renderer.simulateInputMethod("ignored", false)).selected
+  assert.equal(single[0], single[1], "zero click count clamps to one")
+  renderer.simulateClick(20, 20, 0, undefined, 99)
+  assert.deepEqual(JSON.parse(renderer.simulateInputMethod("ignored", false)).selected, [0, 10], "large click count clamps to three")
+  console.log("PASS native input-method helper: missing focus, UTF-16 preedit selection, commit, handler restoration, events, undo, read-only input, and counted clicks")
 } finally { await rm(path, { force: true }) }

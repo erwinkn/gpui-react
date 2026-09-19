@@ -40,7 +40,15 @@ try {
     rows: [{ id: "line", left: { text: "patched legacy", number: 1, start: 0, side: "additions" } }],
   }]])
   assert.ok(renderer.getPaintedText().includes("patched legacy"))
+  commit([["setCustomProp", 1, "spec", {
+    session: 1, documentVersion: 3, text: "patched legacy", readOnly: true,
+    rows: [{ id: "line", left: { text: "patched legacy", number: 1, start: 0, side: "additions" } }],
+  }]])
+  renderer.simulateClick(85, 10, 0, undefined, 2)
+  assert.deepEqual(JSON.parse(renderer.simulateInputMethod("ignored", false)).selected, [0, 7])
+  renderer.simulateClick(85, 10, 0, undefined, 3)
+  assert.deepEqual(JSON.parse(renderer.simulateInputMethod("ignored", false)).selected, [0, 14])
   commit([["destroyElement", 1]])
   assert.equal(renderer.getElementBounds(1), null)
-  console.log("PASS legacy Pierre composition: native registration, paint, bounds, event payload, input, patch, and removal")
+  console.log("PASS legacy Pierre composition: native registration, paint, bounds, event payload, IME, counted clicks, patch, and removal")
 } finally { await rm(binary, { force: true }) }

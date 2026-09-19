@@ -469,3 +469,22 @@ suites, collection editing, and legacy application source/relocated worker
 checks pass. Its remaining IME and edge suites can now use the restored helper.
 This records the owner's report; it does not claim those final suites have
 already run against the new helper artifact.
+
+### Completing native test-helper compatibility
+
+Pierre's remaining edge suite found the optional fifth `simulateClick` argument
+was also absent. The complete prior/current `test_renderer.rs` diff contained
+only that semantic difference after the IME repair. Both the framework thread
+and the Pierre owner checked the full file, not only the failing method.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Restore the original optional click count, default one and clamp one through three, on both mouse-down and mouse-up. | Add editor-specific selection calls or change the edge test. | High | The old helper ignored the fifth JS argument and generated a single click. The new built-in-input regression failed with a collapsed selection before the repair, then passed word and line selection afterward. |
+| Extend the generic input and external viewport probes with counted clicks. | Validate only the N-API signature. | High | The tests check platform-event behavior through native hit testing and retain the IME/selection snapshot contract. The generic probe also checks the lower and upper count clamps. |
+| Keep this change in the test renderer and its native declaration. | Change the production renderer or editor behavior. | High | No production input path changes. The restored helper matches the earlier implementation, apart from formatting. |
+
+The release native build, complete generic input-method/count probe, and fixture
+TypeScript check pass. The external composition still needs rebuilding at the
+published fix before its existing edge suite can finish. I stand behind this
+compatibility repair. Future consumer checks must include the test API used by
+that consumer, as well as its runtime exports and production behavior.

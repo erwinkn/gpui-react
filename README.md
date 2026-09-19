@@ -3385,3 +3385,10 @@ and returns JSON with `selected` and `marked` ranges, each `[start, end]` or
 `null`. It preserves the existing helper used by external editor tests. It does
 not activate a window or drain application events. A missing focused handler
 throws. This helper is not part of the production renderer or the browser API.
+
+
+`TestGpuixRenderer.simulateClick(x, y, button?, modifiers?, clickCount?)` also
+accepts the optional click count used by native word and line selection tests.
+It defaults to one and clamps to the range one through three. Both mouse-down
+and mouse-up carry that count. This test API does not add a new editor gesture;
+it sends the normal GPUI platform events to the focused view.

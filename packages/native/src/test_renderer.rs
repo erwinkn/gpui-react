@@ -357,6 +357,7 @@ impl TestGpuixRenderer {
         y: f64,
         button: Option<u32>,
         modifiers: Option<String>,
+        click_count: Option<u32>,
     ) -> Result<()> {
         let modifiers = crate::automation::parse_modifiers(modifiers.as_deref());
         let button = button.unwrap_or(0);
@@ -374,7 +375,7 @@ impl TestGpuixRenderer {
                     position,
                     modifiers,
                     button: gpui_button,
-                    click_count: 1,
+                    click_count: click_count.unwrap_or(1).clamp(1, 3) as usize,
                     first_mouse: false,
                 },
             );
@@ -385,7 +386,7 @@ impl TestGpuixRenderer {
                     position,
                     modifiers,
                     button: gpui_button,
-                    click_count: 1,
+                    click_count: click_count.unwrap_or(1).clamp(1, 3) as usize,
                 },
             );
             Ok(())

@@ -59,7 +59,8 @@ suites belong to the Pierre project and are separate from this probe.
 
 `input-method.ts` checks the legacy renderer's generic `simulateInputMethod`
 helper against its built-in input. It verifies missing focus, UTF-16 preedit
-selection, composition commit, handler restoration, events, and undo. The
+selection, composition commit, handler restoration, events, undo, read-only
+input, and double/triple-click selection. The
 legacy Pierre probe also checks the helper against the external viewport.
 
 ```sh
