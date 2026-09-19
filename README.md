@@ -56,7 +56,10 @@ changes invalidate list measurements before layout. Broader consumer cases,
 performance work, and release distribution are in progress. The
 [external GPU component](./fixtures/bridge-gpu-component/README.md) uses the
 window's shared Metal queue and float textures. Its tests cover pixels, resource
-lifetime, native motion, and source/relocated workers. The existing API
+lifetime, native motion, and source/relocated workers. The
+[external Pierre probe](./fixtures/bridge-pierre/README.md) checks a shared GPUI
+viewport through the optional new composition and the existing native adapter.
+Pierre owns its editor implementation and browser path. The existing API
 below remains usable. See the
 [accepted architecture and scenarios](./reviews/react-gpui-architecture/scenario-matrix.md).
 

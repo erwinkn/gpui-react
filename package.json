@@ -9,7 +9,8 @@
     "example-app",
     "fixtures/native-composition",
     "fixtures/bridge-counter",
-    "fixtures/bridge-gpu-component"
+    "fixtures/bridge-gpu-component",
+    "fixtures/bridge-pierre"
   ],
   "scripts": {
     "build": "bun run build:native && bun run build:react",

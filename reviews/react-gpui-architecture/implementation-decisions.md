@@ -376,3 +376,42 @@ pins and default JS entry points unchanged. Validate legacy native and WASM
 composition builds plus the new native adapter before the handoff. Pierre will
 then run the complete playground interaction suites. The new bridge itself
 still has only macOS/Bun bootstrap support. No Pierre files have changed yet.
+
+## Pierre shared viewport checkpoint
+
+The owner approved the Rust extraction and the common published framework pin.
+The implementation stays in the Pierre checkout. GPUiX contains only the
+consumer integration probe. This audit records choices beyond that agreement.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Preserve Pierre's external document model and undo ownership. Native code owns IME preview, selection, scrolling, geometry, and paint. | Move committed editing and undo into Rust during the binding extraction. | Medium | Pierre cannot commit new text while its document-model worker is blocked. The standard bridge Input has a native buffer, but that guarantee does not transfer to this existing editor. The handoff states the gap. |
+| Keep legacy patch validation, duplicate/base-version no-ops, and tolerant legacy view parsing. | Introduce a new strict document protocol. | Medium | A malformed or out-of-order patch can still be ignored. This is existing Pierre behavior, not an atomic edit protocol supplied by the new bridge. |
+| Keep construction-only `initialSpec` as a convenience, with command-based source updates. Recommend a mount layout-effect command for large initial documents. | Put live source into props or add special initial-prop handling to the reconciler. | Medium | The bridge sends complete props on an update. Keeping a large `initialSpec` prop can resend it on a style change even though native code ignores it after creation. The preferred command example avoids this extra work. |
+| Cancel an IME preview when its text source or session changes. Rebuild it when only source presentation changes. | Keep old row backups, rebase an arbitrary source edit through composition, or queue replacement documents. | Medium | This protects native source/row ownership, but does not cancel an OS candidate window. It is not a complete concurrent editor protocol. Failing tests captured same-session replacement, row patches, and an annotation insert during composition before the fix. |
+| Keep the large update command inline in its enum. | Add another `Box` to silence Clippy's size warning. | Medium | A focus command has the enum's larger allocation size. The bridge already boxes decoded commands; another box adds an allocation on document updates. This has not been benchmarked. View Clippy reports this new warning and two existing style warnings; the composition passes strict Clippy. |
+| Keep `snapshot()` as an explicit full-text query. | Retain another serialized snapshot or send full text on every event. | Medium | Frequent full-text polling costs a copy per query. Normal event payloads retain the existing small Pierre format. Queries do not force layout and can report state newer than paint. |
+| Make the shared view the sole owner of the typed live `Spec`; the legacy adapter retains only a pending source plus declared view/patch props. | Retain the old adapter's second full typed specification. | High | The old renderer still retains its own generic declared props. This extraction removes the adapter's full typed copy, not all application or renderer storage. An ownership test checks that initial text and row allocations move into the view. |
+| Implement `Render`, `Focusable`, and `EventEmitter` on the ordinary viewport. Put optional React trait implementations beside that type. | Add a wrapper entity and relay every event, or couple the default viewport to GPUiX. | High | Rust's orphan rule prevents a separate crate from directly implementing a foreign binding trait on a foreign viewport type. Features keep the default view free of renderer dependencies. The thin composition crate registers the optional implementation. |
+| Keep legacy native/WASM and the new native composition separate, with legacy as the workspace default. | Replace default JS entries or require the new host in browsers. | High | A workspace-wide build can unify optional features and include more code. The documented build commands select each composition separately. The new bootstrap remains macOS/Bun only. |
+| Pin all framework Rust dependencies to published `3dd67a230be63030e78332e874f9cec206a1f7c1`. | Mix the old renderer pin with a newer GPUI/binding graph. | High | GPUI types must come from one crate identity. Cargo metadata reports one GPUI package, and both composition builds pass. npm/release pins and default JS entries remain unchanged. |
+| Use ordinary GPUI event subscriptions, with an optional painted-text observer for the legacy adapter. | Keep the old renderer callback and text registry imports in the shared viewport. | High | Event delivery now follows GPUI effects. Tests cover native payloads, sequence ordering, the old `change.value` envelope, and a queued new-host event at removal. The new canvas does not automatically join the bridge Document selection registry; Pierre keeps its editor selection behavior. |
+| Parse colors with the same csscolorparser/clamp conversion used by the old core helper. | Depend on the old renderer for one color helper. | High | This preserves the existing sRGB paint conversion. It does not add new theme-token or HDR semantics to Pierre text paint. |
+| Consume only default scroll when the viewport moves; retain propagation and honor consumption by a child. | Stop propagation on every wheel as before. | High | The offscreen test failed on the old code. The fixed viewport preserves ancestor callbacks, prevents double scrolling, and chains at the boundary through the existing GPUI API. No GPUI patch was needed. |
+| Add the missing `unicode-linebreak` dependency before extracting source. | Treat the initial unresolved import as an extraction regression. | High | The saved baseline failed to compile without this dependency. The change is included in the scoped patch. |
+| Add an opt-in native frame test component to the external composition. | Activate windows, change GPUI's occlusion behavior, or claim later paint from state-only queries. | High | Hidden and fully covered macOS windows stop display callbacks. The test component requests native draws every 16 ms and stops at unmount. It is absent from the default build and proves neither display FPS nor native frame scheduling while visible. |
+| Separate logical focus checks from active-window focus events. Register the native observer before changing focus. | Require a hidden window to emit focus or subscribe after the event and expect replay. | High | Initial test assumptions were wrong. The source worker now checks logical focus; the offscreen native test sets logical activation without activating the OS window and checks the actual focus event. The legacy test enables the key listener that creates its focus handle. |
+| Test both normal and frame-probe source/relocated executables. Leave complete playground interaction suites to the Pierre owner. | Change Pierre's TypeScript and run its integration migration here. | High | Native/WASM builds and focused probes do not prove every editor, WebGPU, and WebGL interaction. The agreed handoff keeps these tests explicit and leaves defaults unchanged. |
+| Return a scoped patch and changed-file hashes without staging Pierre's untracked repository. | Make an initial commit that could absorb unrelated source. | High | The patch requires the saved source baseline. It applies cleanly to that baseline, and the owner receives the exact changed-file list. |
+
+The 12 Rust tests and the offscreen GPU example pass. Legacy native and WASM
+release builds pass; wasm-bindgen produces the browser module. The normal new
+composition and the optional frame probe pass source and relocated executable
+checks. The probe also verifies later document paint and annotation height.
+Strict TypeScript checks pass. Full playground interaction suites remain with
+Pierre, as agreed.
+
+I stand behind this extraction and its stated limits. I do not claim that the
+whole framework replacement is complete. The remaining geometry, event-race,
+performance, and distribution work remains under the active goal. No Cherry
+completion message has been sent.

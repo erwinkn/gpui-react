@@ -1,0 +1,19 @@
+{
+  "name": "@gpuix/bridge-pierre-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@gpuix/bridge": "workspace:*",
+    "react": "19.2.4",
+    "@gpuix/bridge-controls": "workspace:*"
+  },
+  "scripts": {
+    "test": "bun test.ts",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "^5.3.0"
+  }
+}
