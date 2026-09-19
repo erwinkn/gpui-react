@@ -208,7 +208,7 @@ fn wrapped_view_preserves_native_state_and_delivers_typed_events(cx: &mut TestAp
         mounted.unmount(window, cx);
         mounted.unmount(window, cx);
         assert!(mounted.prepare("query", json!(null)).is_err());
-        assert!(mounted.set_subscription(Some(20)).is_err());
+        assert!(mounted.set_subscription(Some(20), cx).is_err());
     })
     .unwrap();
 }
@@ -249,4 +249,67 @@ fn dropping_a_binding_stops_events_even_if_the_view_is_still_retained(cx: &mut T
     })
     .unwrap();
     assert!(received.lock().unwrap().is_empty());
+}
+
+#[gpui::test]
+fn pending_gpui_events_keep_their_subscription_before_replacement_and_unmount(
+    cx: &mut TestAppContext,
+) {
+    let mut registry = Registry::default();
+    registry
+        .register(Component::<Counter>::new("counter").events().commands())
+        .unwrap();
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let output = received.clone();
+    let window = cx.add_window(|_, _| Empty);
+    let mut mounted = cx
+        .update_window(window.into(), |_, window, cx| {
+            registry
+                .mount(
+                    "counter",
+                    registry
+                        .prepare_props("counter", json!({"step":1}))
+                        .unwrap(),
+                    MountOptions {
+                        target: 1,
+                        subscription: Some(10),
+                        events: Arc::new(move |e| output.lock().unwrap().push(e)),
+                    },
+                    window,
+                    cx,
+                )
+                .unwrap()
+        })
+        .unwrap();
+    cx.update_window(window.into(), |_, window, cx| {
+        mounted
+            .apply(
+                "command",
+                mounted.prepare("command", json!("increment")).unwrap(),
+                window,
+                cx,
+            )
+            .unwrap();
+        mounted.set_subscription(Some(11), cx).unwrap();
+        mounted
+            .apply(
+                "command",
+                mounted.prepare("command", json!("increment")).unwrap(),
+                window,
+                cx,
+            )
+            .unwrap();
+        mounted.unmount(window, cx);
+        drop(mounted);
+    })
+    .unwrap();
+    assert_eq!(
+        received
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| e.subscription)
+            .collect::<Vec<_>>(),
+        vec![10, 11]
+    );
 }

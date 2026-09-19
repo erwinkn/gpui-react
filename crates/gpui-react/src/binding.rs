@@ -274,6 +274,10 @@ impl Registry {
         self.binding(name)?.prepare("props", value)
     }
 
+    pub(crate) fn prepare(&self, name: &str, kind: &str, value: Value) -> Result<Prepared> {
+        self.binding(name)?.prepare(kind, value)
+    }
+
     pub fn supports(&self, name: &str, capability: &str) -> Result<bool> {
         Ok(self.binding(name)?.supports(capability))
     }
@@ -361,14 +365,17 @@ impl MountedView {
         self.binding.children(&self.view, children, window, cx)
     }
 
-    pub fn set_subscription(&self, subscription: Option<u64>) -> Result<()> {
+    pub fn set_subscription(&self, subscription: Option<u64>, cx: &mut App) -> Result<()> {
         if self.unmounted {
             bail!("view is unmounted");
         }
         if subscription.is_some() && !self.binding.supports("events") {
             bail!("view has no events");
         }
-        self.route.set(subscription);
+        // GPUI emits events through its ordered effect queue. Update the route
+        // in that same queue so earlier native commands retain their callback.
+        let route = self.route.clone();
+        cx.defer(move |_| route.set(subscription));
         Ok(())
     }
 
@@ -377,8 +384,16 @@ impl MountedView {
             return;
         }
         self.unmounted = true;
-        self.route.set(None);
-        self.subscriptions.clear();
+        let route = self.route.clone();
+        let subscriptions = std::mem::take(&mut self.subscriptions);
+        let view = self.view.clone();
+        // Earlier Emit effects must run before retirement. Keep the entity
+        // alive until then even if the owner removes its last normal handle.
+        cx.defer(move |_| {
+            route.set(None);
+            drop(subscriptions);
+            drop(view);
+        });
         self.binding.unmount(&self.view, window, cx);
     }
 }
@@ -387,6 +402,8 @@ impl Drop for MountedView {
     fn drop(&mut self) {
         // A scene can still hold the GPUI view until its frame is retired.
         // Dropping the bridge must nevertheless stop its event delivery now.
-        self.route.set(None);
+        if !self.unmounted {
+            self.route.set(None);
+        }
     }
 }

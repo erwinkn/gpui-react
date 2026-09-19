@@ -1,8 +1,9 @@
 # Asynchronous React to GPUI bridge
 
 This is the new React integration, developed alongside the existing GPUiX
-packages. The native host connection is still in progress. The tests currently
-exercise the real React reconciler against a recording transport.
+packages. It includes an explicit macOS/Bun native host connection and can wrap
+ordinary GPUI views from a compiled composition. The complete native component
+library and release distribution remain in progress.
 
 ```tsx
 import { createRoot, nativeComponent } from '@gpuix/bridge'
@@ -27,16 +28,21 @@ React work. `renderSync` flushes React only; it does not wait for native work.
 `flush` waits for the already collected native transactions, not a future React
 render or native presentation. `unmount` commits removal, awaits application,
 then closes the session. A closed transport cannot be reused with reset IDs.
+`dispose` runs React cleanup after native failure/shutdown without sending more
+native operations. It rejects outstanding requests and closes the transport.
 
-The transport implements `send(encodedTransaction)`, `subscribe(receiver)`, and
+The transport implements `send(encodedTransaction)`, `subscribe(receiver, onError?)`, and
 `close(reason)`. It preserves transaction order and delivers earlier events
 before the acknowledgement that retires their subscriptions. Query and command
 results carry request IDs. Missing results or invalid acknowledgement order
 fail the root. An individual command error rejects its promise.
+Transport failure also reaches the root when no request is pending.
 
 The reconciler retains only speculative child descriptions until their commit.
 After mounting, native code owns child topology. Native removal reports retired
 subscriptions, so the worker needs no native tree to discover removed callbacks.
+Host IDs are allocated at commit, in native creation order. Abandoned render
+descriptions allocate no native IDs or component instances.
 Callback changes do not resend unchanged native props. Props follow React's
 immutable-update convention; changing an object in place is unsupported.
 
@@ -59,3 +65,38 @@ The tests cover commit/effect grouping, asynchronous refs, abandoned Suspense
 work, keyed movement, text removal, callback versions, session reuse, queue
 failure, invalid values, and missing native replies. Full native component,
 platform, and installed-package validation remains required before release.
+
+## Native application entries
+
+Select one compiled composition explicitly in both entry files:
+
+```ts
+// host.ts
+import { runApplication } from '@gpuix/bridge/application'
+const bindings = require('./app-runtime.node')
+await runApplication(bindings, new URL('./worker.tsx', import.meta.url), {
+  title: 'My app', width: 800, height: 600,
+})
+```
+
+```tsx
+// worker.tsx
+import { attachApplication } from '@gpuix/bridge/application'
+const bindings = require('./app-runtime.node')
+const root = attachApplication(bindings)
+root.render(<App />)
+```
+
+The launcher enters AppKit's native loop. It never pumps that loop from a JS
+timer. Native events and acknowledgements cross a bounded queue; the worker
+holds no Rust tree. The window starts hidden and is shown inactive after the
+first applied transaction and native draw. `show: false` keeps it hidden. This
+API does not activate the app. Closing the native window, unmounting the root,
+or worker failure ends the session. Worker attachment has a 10-second deadline;
+shutdown allows two seconds for worker cleanup before termination. These limits
+match the tested earlier host, but broader lifecycle coverage remains pending.
+
+Use static binary paths and include both entries in a Bun compilation. The
+[counter fixture](../../fixtures/bridge-counter/README.md) contains source and
+relocated executable checks. This host currently supports macOS with Bun;
+cross-platform host and browser drivers remain separate work.

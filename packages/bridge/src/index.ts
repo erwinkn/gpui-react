@@ -55,7 +55,7 @@ export class BridgeRoot {
     if (!Number.isSafeInteger(this.maxPending) || this.maxPending < 1 || !Number.isSafeInteger(this.maxBytes) || this.maxBytes < 1) throw Error("Invalid queue limits")
     this.onError = options.onError ?? ((error) => console.error(error))
     attached.add(transport)
-    this.unsubscribe = transport.subscribe(event => this.receive(event))
+    this.unsubscribe = transport.subscribe(event => this.receive(event), error => this.fail(error))
     this.container = reconciler.createContainer(this, ConcurrentRoot, null, false, null, "", (error: Error) => this.fail(error), this.onError, this.onError, null)
   }
 
@@ -89,11 +89,25 @@ export class BridgeRoot {
   async unmount(): Promise<void> {
     this.renderSync(null)
     await this.flush()
+    this.dispose("React root unmounted")
+    // A transport is a session; it must not be reused with reset IDs.
+  }
+
+  /** Run React cleanup after host failure or shutdown without attempting to
+   * update a closed native session. Native resource cleanup belongs to the host. */
+  dispose(reason = "React root disposed"): void {
+    if (this.disposed) return
     this.disposed = true
+    reconciler.flushSyncFromReconciler(() => reconciler.updateContainer(null, this.container, null, null))
+    this.operations = []
     this.unsubscribe()
     this.callbacks.clear()
-    this.transport.close("React root unmounted")
-    // A transport is a session; it must not be reused with reset IDs.
+    const error = this.failure ?? Error(reason)
+    for (const call of this.calls.values()) call.reject(error)
+    this.calls.clear()
+    for (const waiter of this.flushWaiters) waiter.reject(error)
+    this.flushWaiters.clear()
+    this.transport.close(reason)
   }
 
   private check(): void {
@@ -123,6 +137,7 @@ export class BridgeRoot {
   }
 
   record(operation: Operation): void {
+    if (this.disposed) return
     this.check()
     this.operations.push(operation)
     if (!this.scheduled) {
@@ -175,17 +190,22 @@ export class BridgeRoot {
   }
 
   host(component: string, props: Props): Host {
-    const id = ++this.nextId
+    const host = { id: 0, component, props, root: this, initial: [], mounted: false, subscription: null } as unknown as Host
     const call = (op: "command" | "query", value: unknown): Promise<any> => {
       try { this.check() } catch (error) { return Promise.reject(error) }
       const request = ++this.nextRequest
       return new Promise((resolve, reject) => {
         this.calls.set(request, { resolve, reject })
-        this.record({ op, id, request, value })
+        this.record({ op, id: host.id, request, value })
       })
     }
-    return { id, component, props, root: this, initial: [], mounted: false, subscription: null,
-      public: Object.freeze({ id, command: (value: unknown) => call("command", value), query: (value: unknown) => call("query", value) }) }
+    host.public = Object.freeze({ get id() { return host.id }, command: (value: unknown) => call("command", value), query: (value: unknown) => call("query", value) })
+    return host
+  }
+
+  allocateId(): number {
+    if (this.nextId === Number.MAX_SAFE_INTEGER) throw Error("Native host IDs exhausted")
+    return ++this.nextId
   }
 
   listen(host: Host): number | null {
@@ -212,6 +232,7 @@ function sameProps(a: NativeProps, b: NativeProps): boolean {
 
 function materialize(host: Host): void {
   if (host.mounted) return
+  host.id = host.root.allocateId()
   host.mounted = true
   host.subscription = host.root.listen(host)
   host.root.record({ op: "create", id: host.id, component: host.component, props: nativeProps(host.props), subscription: host.subscription })

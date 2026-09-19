@@ -58,3 +58,34 @@ component integration, and packaged distribution remain active goal work.
 
 I stand behind this checkpoint as a tested boundary implementation. I do not
 claim that it yet fulfills the complete runtime goal.
+
+## Native ownership and host checkpoint
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Keep a temporary overlay of affected topology during validation. | Clone the whole tree or partially mutate live views before validation finishes. | Medium | A transaction that changes many children still copies their child-ID vectors. Performance must be measured for large mounts. No props or live view state are cloned. |
+| Synchronize changed native child slots before commands/queries and at transaction end. | Rebuild child handles after every individual insertion. | Medium | An extension that reads child composition inside `set_props` must not assume later mutations already applied. Commands see the preceding complete composition. |
+| Allocate host IDs at commit and enforce monotonic native creation. | Keep permanent deleted-ID tombstones or allow reused IDs. | High | Speculative React descriptions have no native ID until mount. Public refs are assigned after placement. A nested-tree regression verifies creation order. |
+| Retire subscriptions in GPUI's ordered effect queue and retain the entity until retirement. | Clear subscriptions immediately. | High | Immediate clearing lost events emitted before removal; a failing test demonstrated it. The complete worker example now verifies command-before-removal delivery. |
+| Hide React subtrees by removing their view handles from the rendered child list while retaining instances. | Use an outer wrapper or inherit the old visibility test. | High | Hidden content occupies no layout space. This matches the intended suspended-content behavior and avoids changing visible layout with wrappers. |
+| Keep the native host in a separate crate and require explicit composition objects in JS. | Import the old runtime or select a fallback binary. | High | The app must pass the same compiled composition in both entries. Loader ergonomics and installed archives still need broader tests. |
+| Reuse the existing MacPlatform lifecycle and scheduling API. | Modify GPUI again or drive AppKit from JavaScript. | High | The new host still needs signal and full failure-lifecycle coverage before release. No GPUI source changed in this checkpoint. |
+| Use a background native timer as the initial blocked-worker probe. | Claim visible frame cadence from an occluded window. | High | This proves native executor progress, not keyboard/scroll behavior or physical display smoothness. Those remain separate tests. |
+
+Validation now includes nine core Rust tests, three host queue tests, fourteen
+React/transport tests, and the real counter composition. The native example
+passes source and relocated compilation, three sequential sessions, startup and
+missing-worker errors, invalid component props, and a command immediately before
+unmount. During a 300 ms application-worker block the native counter advanced
+from 7 to 67; its single background draw is not reported as a display-rate result.
+The packaging check also exposed Bun writing temporary `.bun-build` files into
+the checkout. A failing assertion now protects the workspace; compilation runs
+from the owned temporary directory and relocation still passes.
+Another failing test measured an extra GPUI render after a state-only query.
+Root notification now follows root topology changes only. Component prop and
+state updates use their own ordinary GPUI notifications. Read-only queries and
+callback route changes do not request a redraw.
+
+I stand behind the tested native owner and host checkpoint. It is still not the
+complete requested replacement: controls, input/IME, lists, text services,
+consumer examples, platform coverage and package release remain active work.

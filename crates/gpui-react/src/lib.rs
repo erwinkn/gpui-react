@@ -5,10 +5,13 @@
 //! No JavaScript runtime or worker-side native description tree is required.
 
 mod binding;
+mod host;
+pub mod protocol;
 
 pub use binding::{Component, Emission, EventSink, MountOptions, MountedView, Prepared, Registry};
 pub use gpui;
 use gpui::{AnyView, Context, EventEmitter, Render, Window};
+pub use host::Host;
 use serde::{Serialize, de::DeserializeOwned};
 
 /// The minimum interface needed to mount a GPUI view from React.

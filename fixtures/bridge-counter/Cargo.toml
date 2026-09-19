@@ -1,0 +1,24 @@
+[package]
+name = "gpui-react-counter-example"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+gpui-react-host = { path = "../../crates/gpui-react-host" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+napi = { version = "3", features = ["napi8"] }
+napi-derive = "3"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+debug = 1

@@ -2,7 +2,8 @@
 
 This crate is the new integration's native component boundary. It depends on
 GPUI, Serde, and anyhow. It does not depend on `gpuix-native`, its renderer, or
-its retained tree. Native host transport integration is still in progress.
+its retained tree. [`gpui-react-host`](../gpui-react-host/README.md) supplies a
+native loop and worker transport separately.
 
 A view keeps its ordinary `impl gpui::Render`. Implement `ReactView` with a
 deserializable `Props` type, `create`, and `set_props`. `mounted` and `unmounting`
@@ -38,7 +39,10 @@ invalid data, duplicate names, and unknown components return errors.
 window-aware cleanup hook once. The owner must call it while the app and window
 are alive, then remove and release the view. A rendered frame can temporarily
 retain a view handle. Dropping the binding still disables its event route.
-The event sink must enqueue without waiting for JavaScript and fail explicitly
+Subscription replacement and unmount retirement follow GPUI's effect queue.
+An event emitted before retirement keeps its old subscription even when removal
+occurs in the same native transaction. The view stays alive until that event
+has been processed. The event sink must enqueue without waiting for JavaScript and fail explicitly
 on overflow. It receives serialization errors as well as successful events.
 
 Tests use GPUI's test application and real entity/subscription machinery:
@@ -48,5 +52,20 @@ cargo test --manifest-path crates/gpui-react/Cargo.toml --release
 cargo clippy --manifest-path crates/gpui-react/Cargo.toml --release --all-targets -- -D warnings
 ```
 
-These tests currently validate binding behavior, not physical GPU presentation
-or a complete worker-host application.
+`Host` owns one native index of view identity, topology, visibility and event
+routes. Component props and interaction state remain in the GPUI views. It
+validates complete transactions before component construction or mutation,
+using a temporary overlay of only affected topology records. Unknown parents,
+cycles, invalid insertion anchors, unsupported child slots, invalid props,
+reused IDs, and unplaced new views reject the transaction. Invalid commands or
+queries return request errors while valid mutations remain committed.
+
+Host IDs are allocated at React commit time and must increase within a session.
+This rejects reuse without retaining deleted-node tombstones. Child views are
+synchronized once per affected parent before a command/query and at transaction
+end. Hidden children are omitted from layout while their native state remains
+mounted. `Host::clear` runs native cleanup while the window still exists.
+
+The local tests validate the real GPUI entity/subscription machinery and native
+transaction ownership. The separate counter composition tests the worker-host
+application. Neither certifies physical display performance.

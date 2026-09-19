@@ -25,7 +25,7 @@ export interface NativeEvent { target: number; subscription: number; payload: un
  * The payload is encoded once here and decoded once at native admission. */
 export interface Transport {
   send(transaction: string): Promise<TransactionReply>
-  subscribe(receiver: (event: NativeEvent) => void): () => void
+  subscribe(receiver: (event: NativeEvent) => void, onError?: (error: Error) => void): () => void
   close(reason: string): void
 }
 

@@ -19,6 +19,15 @@ class RecordingTransport implements Transport {
 const Counter = nativeComponent<{ step: number }, { value: number }>("counter")
 
 describe("React commits to the asynchronous native boundary", () => {
+  it("allocates native IDs in committed creation order, independent of render completion order", async () => {
+    const transport = new RecordingTransport()
+    const root = createRoot(transport)
+    root.renderSync(h("box", null, h("box", null, "nested"), <Counter step={1} />))
+    await root.flush()
+    const ids = transport.transactions[0].operations.flatMap(op => op.op === "create" ? [op.id] : [])
+    expect(ids).toEqual([1, 2, 3, 4])
+    await root.unmount()
+  })
   it("groups committed nodes and layout-effect commands; refs only query asynchronously", async () => {
     const transport = new RecordingTransport()
     const root = createRoot(transport)

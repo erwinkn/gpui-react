@@ -7,7 +7,8 @@
     "packages/*",
     "examples",
     "example-app",
-    "fixtures/native-composition"
+    "fixtures/native-composition",
+    "fixtures/bridge-counter"
   ],
   "scripts": {
     "build": "bun run build:native && bun run build:react",

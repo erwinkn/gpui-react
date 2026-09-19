@@ -23,9 +23,12 @@ child capabilities. The JavaScript package uses React 19.2's mutation reconciler
 and an asynchronous transaction transport. It does not import the existing
 GPUiX renderer or maintain a worker-side Rust tree.
 
-This is an implementation checkpoint, not a replacement application runtime
-release. The native host connection and full component regression coverage are
-still in progress. The existing application API below remains usable. See the
+The new macOS host runs a compiled component composition with an explicit Bun
+application worker. The [counter fixture](./fixtures/bridge-counter/README.md)
+tests props, events, commands, queries, worker stalls, repeated startup, startup
+failure, invalid commits, and a relocated compiled executable. This remains an
+implementation checkpoint: native controls, full component regression coverage,
+and release distribution are in progress. The existing API below remains usable. See the
 [accepted architecture and scenarios](./reviews/react-gpui-architecture/scenario-matrix.md).
 
 ### Native-owned application loop on macOS
