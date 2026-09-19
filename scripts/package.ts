@@ -12,12 +12,12 @@ if (!version || !/^\d+\.\d+\.\d+-[a-z0-9.]+$/.test(version)) throw Error("Pass a
 const output = resolve(process.argv[3] ?? join(root, "dist/bridge"))
 const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim() !== ""
 if (dirty && !process.argv.includes("--allow-dirty")) throw Error("Commit the source before packing; --allow-dirty is for local development tests only")
-for (const args of [["scripts/build-bridge-runtime.ts"], ["run", "--cwd", "packages/bridge", "build"], ["run", "--cwd", "packages/bridge-controls", "build"]]) {
+for (const args of [["scripts/build-runtime.ts"], ["run", "--cwd", "packages/core", "build"]]) {
   const child = Bun.spawn(["bun", ...args], { cwd: root, stdout: "inherit", stderr: "inherit" })
   if (await child.exited !== 0) throw Error(`Build failed: ${args.join(" ")}`)
 }
-const binding = createRequire(import.meta.url)(join(root, "packages/bridge-runtime/binding.cjs"))
-if (binding.bridgeRuntimeVersion() !== 1) throw Error("Unexpected native protocol")
+const binding = createRequire(import.meta.url)(join(root, "packages/runtime/binding.cjs"))
+if (binding.bridgeRuntimeVersion() !== 2) throw Error("Unexpected native protocol")
 const exports = Object.keys(binding).sort()
 if (exports.join(",") !== "NativeClient,NativeHost,bridgeRuntimeVersion") throw Error(`Unexpected native exports: ${exports}`)
 const base = `https://github.com/erwinkn/gpui-react/releases/download/bridge-v${version}`
@@ -26,7 +26,7 @@ const sha256 = (path: string) => createHash("sha256").update(readFileSync(path))
 mkdirSync(output, { recursive: true })
 try {
   const packages = []
-  for (const name of ["bridge", "bridge-controls", "bridge-runtime"]) {
+  for (const name of ["core", "runtime"]) {
     const source = join(root, "packages", name)
     const destination = join(stage, name)
     mkdirSync(destination)
@@ -45,7 +45,7 @@ try {
     packages.push({ name: manifest.name, filename, url: `${base}/${filename}`, sha256: sha256(join(output, filename)) })
   }
   const commit = (cwd: string) => execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" }).trim()
-  const native = join(root, "packages/bridge-runtime/gpui-react-runtime.darwin-arm64.node")
+  const native = join(root, "packages/runtime/gpui-react-runtime.darwin-arm64.node")
   const manifest = {
     version, source: commit(root), gpui: commit(join(root, "zed")), sourceDirty: dirty,
     platform: process.platform, arch: process.arch, bun: Bun.version,

@@ -3,7 +3,7 @@ import { createRef, useLayoutEffect } from "react"
 import { nativeComponent, type NativeRef } from "@gpui-react/core"
 import { attachApplication } from "@gpui-react/core/application"
 
-import { Input, type InputRef, type InputEvent } from "@gpui-react/controls"
+import { Input, type InputRef, type InputEvent } from "@gpui-react/core"
 
 const bindings = require("./counter.node")
 if (process.env.BRIDGE_COUNTER_MODE === "startup-error") throw Error("Expected worker startup failure")

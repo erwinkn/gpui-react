@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { Fragment, createRef, useLayoutEffect } from "react"
 import { nativeComponent, type NativeRef, type FrameInfo } from "@gpui-react/core"
 import { attachApplication } from "@gpui-react/core/application"
-import { Container, Text, type ContainerRef, type Style } from "@gpui-react/controls"
+import { Container, Text, type ContainerRef, type Style } from "@gpui-react/core"
 
 type Spec = { text: string; documentVersion: number; session: number; rows: object[] }
 type Event = { kind: string; seq: number; documentVersion: number }

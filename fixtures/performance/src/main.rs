@@ -87,7 +87,7 @@ fn bridge_text(text: String, style: u32) -> Value {
 }
 /// The mount transaction. With `FRAME_BENCH_WIRE_DIR` set, both bridge modes
 /// read what the JavaScript bridge sealed for this scene (see
-/// `fixtures/bridge-counter/js-wire-dump.tsx`); otherwise the JSON is built here.
+/// `fixtures/counter/js-wire-dump.tsx`); otherwise the JSON is built here.
 fn encoded(mode: &str, count: usize, virtualized: bool) -> Vec<u8> {
     if let Ok(dir) = std::env::var("FRAME_BENCH_WIRE_DIR") {
         if mode == "bridge" || mode == "binary" {

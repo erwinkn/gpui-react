@@ -29,7 +29,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun ../../scripts/build-bridge-runtime.ts"
+    "build": "bun ../../scripts/build-runtime.ts"
   },
   "peerDependencies": {
     "@gpui-react/core": "^0.1.0"

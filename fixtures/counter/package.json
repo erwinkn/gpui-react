@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@gpui-react/core": "workspace:*",
-    "@gpui-react/controls": "workspace:*",
     "@gpui-react/gpu-example": "workspace:*",
     "react": "19.2.4"
   },

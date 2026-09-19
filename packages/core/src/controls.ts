@@ -1,4 +1,4 @@
-import { nativeComponent, type NativeRef, type FrameInfo } from "@gpui-react/core"
+import { nativeComponent, type NativeRef, type FrameInfo } from "./index.js"
 import { Children, createElement, type ReactNode, type Ref } from "react"
 
 export type Length = number | "100%" | "auto"
@@ -56,7 +56,7 @@ export type InputRef = NativeRef<InputCommand, null, InputSnapshot>
 export const Input = nativeComponent<InputProps, InputEvent, InputCommand, null, InputSnapshot>("input")
 
 export interface Rect { x: number; y: number; width: number; height: number }
-export type { FrameInfo } from "@gpui-react/core"
+export type { FrameInfo } from "./index.js"
 export interface Painted { bounds: Rect; revision: number; frame: FrameInfo | null }
 export interface ContainerProps {
   style?: Style

@@ -1,5 +1,5 @@
 import { nativeComponent, type NativeRef, type FrameInfo } from "@gpui-react/core"
-import type { Style, Rect } from "@gpui-react/controls"
+import type { Style, Rect } from "@gpui-react/core"
 
 export type Color = [number, number, number, number]
 export interface TextureProps {

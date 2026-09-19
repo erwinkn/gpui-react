@@ -6,7 +6,7 @@ import { spawn } from "node:child_process"
 
 // The component and binary remain in Pierre. This probe does not build or edit it.
 const library = process.argv[2]
-if (!library) throw Error("Usage: bun fixtures/bridge-pierre/test.ts /path/to/libpierre_react_runtime.dylib")
+if (!library) throw Error("Usage: bun fixtures/pierre/test.ts /path/to/libpierre_react_runtime.dylib")
 const fixture = import.meta.dir
 async function run(command: string, args: string[], cwd = fixture): Promise<string> {
   return new Promise((resolve, reject) => {

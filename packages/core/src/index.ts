@@ -5,6 +5,7 @@ import type { KindSchema, NativeEvent, NativeRef, TransactionReply, Transport } 
 import { BinaryEncoder, JsonEncoder, validate, type Encoded, type Encoder } from "./wire.js"
 export type { FrameInfo, KindSchema, NativeEvent, NativeRef, Operation, Transaction, TransactionReply, Transport, WireField, WireType } from "./protocol.js"
 export { decodeWire } from "./wire.js"
+export * from "./controls.js"
 
 export function nativeComponent<Props extends object, Event = never, Command = unknown, Query = unknown, Reply = unknown>(name: string) {
   if (!/^[a-z0-9-]+$/.test(name)) throw Error("Invalid native component name")

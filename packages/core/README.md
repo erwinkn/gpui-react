@@ -80,8 +80,8 @@ silently dropping a React commit would desynchronize the renderer. `onError`
 receives root failures and event-handler exceptions. The default logs errors.
 
 ```sh
-bun run --cwd packages/bridge build
-bun run --cwd packages/bridge test
+bun run --cwd packages/core build
+bun run --cwd packages/core test
 ```
 
 The tests cover commit/effect grouping, asynchronous refs, abandoned Suspense
@@ -94,7 +94,8 @@ platform, and installed-package checks are documented in the repository README.
 Select one compiled composition explicitly in both entry files:
 
 For the standard controls, use `import bindings from '@gpui-react/runtime'`
-in both files. Install matching versions of the three bridge packages. A custom
+in both files. Install matching versions of `@gpui-react/core` and
+`@gpui-react/runtime`. A custom
 composition uses the literal native path shown below instead. The default
 runtime has no browser driver. It supports macOS arm64 with Bun.
 
@@ -128,7 +129,7 @@ native shutdown and let `runApplication` return. After the host ends, default
 process signal behavior applies. Per-signal JS listeners are not forwarded.
 
 Use static binary paths and include both entries in a Bun compilation. The
-[counter fixture](../../fixtures/bridge-counter/README.md) contains source and
+[counter fixture](../../fixtures/counter/README.md) contains source and
 relocated executable checks. This host currently supports macOS with Bun;
 cross-platform host and browser drivers remain separate work.
 

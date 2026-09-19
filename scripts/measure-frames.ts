@@ -10,13 +10,13 @@ const output = resolve(process.argv[2] ?? "/tmp/gpui-react-frame-cost")
 const target = resolve(process.env.CARGO_TARGET_DIR ?? join(root, "target/bridge-performance"))
 mkdirSync(output, { recursive: true })
 const run = (command: string, args: string[], cwd = root) => execFileSync(command, args, { cwd, encoding: "utf8", maxBuffer: 512 * 1024 * 1024 }).trim()
-const graph = JSON.parse(run("cargo", ["metadata", "--manifest-path", "fixtures/bridge-performance/Cargo.toml", "--locked", "--format-version", "1"]))
+const graph = JSON.parse(run("cargo", ["metadata", "--manifest-path", "fixtures/performance/Cargo.toml", "--locked", "--format-version", "1"]))
 const gpui = graph.packages.filter((item: { name: string }) => item.name === "gpui")
 assert.equal(gpui.length, 1, "Every mode must share one GPUI crate")
 const gpuiFeatures: string[] = graph.resolve.nodes.find((item: { id: string }) => item.id === gpui[0].id).features
 assert.ok(!gpuiFeatures.includes("test-support") && !gpuiFeatures.includes("leak-detection"), "Timing builds must not contain GPUI test/leak tracking")
 for (const [binary, features] of [["timing", []], ["heap", ["allocation-counts"]], ["scenes", ["scene-checks"]]] as const) {
-  const args = ["build", "--release", "--locked", "--manifest-path", "fixtures/bridge-performance/Cargo.toml"]
+  const args = ["build", "--release", "--locked", "--manifest-path", "fixtures/performance/Cargo.toml"]
   if (features.length) args.push("--features", features.join(","))
   const build = Bun.spawn(["cargo", ...args], { cwd: root, env: { ...process.env, CARGO_TARGET_DIR: target, CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "3" }, stdout: "inherit", stderr: "inherit" })
   if (await build.exited !== 0) throw Error("Frame comparison build failed")
@@ -29,7 +29,7 @@ mkdirSync(wires, { recursive: true })
 writeFileSync(join(wires, "schema.json"), run(join(output, "timing"), ["schema"]) + "\n")
 const rowCounts = [100, 1000, 5000]
 for (const scene of ["flow", "list"]) {
-  for (const rows of rowCounts) run("bun", ["fixtures/bridge-counter/js-wire-dump.tsx", wires, String(rows), scene], root)
+  for (const rows of rowCounts) run("bun", ["fixtures/counter/js-wire-dump.tsx", wires, String(rows), scene], root)
 }
 const env = { ...process.env, FRAME_BENCH_WIRE_DIR: wires, BRIDGE_SCHEMA: join(wires, "schema.json"), NODE_ENV: "production" }
 const results: object[] = []

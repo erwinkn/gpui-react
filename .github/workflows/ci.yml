@@ -37,32 +37,20 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
-      - name: Test crates
-        run: |
-          cargo test --manifest-path crates/gpui-react/Cargo.toml
-          cargo test --manifest-path crates/gpui-react-controls/Cargo.toml
-          cargo test --manifest-path crates/gpui-react-host/Cargo.toml
+      - name: Test workspace
+        run: cargo test --workspace
 
-      - name: Check runtime and fixtures
+      - name: Check fixtures
         run: |
-          cargo check --manifest-path crates/gpui-react-runtime/Cargo.toml
-          cargo check --manifest-path fixtures/bridge-performance/Cargo.toml
-          cargo check --manifest-path fixtures/bridge-performance/Cargo.toml --features allocation-counts
-          cargo check --manifest-path fixtures/bridge-gpu-component/Cargo.toml
-          cargo check --manifest-path fixtures/bridge-counter/Cargo.toml
+          cargo check -p gpui-react-frame-cost
+          cargo check -p gpui-react-frame-cost --features allocation-counts
+          cargo check -p gpui-react-texture-example
+          cargo check -p gpui-react-counter-example
 
       - name: Clippy
-        run: |
-          cargo clippy --manifest-path crates/gpui-react/Cargo.toml --all-targets --all-features -- -D warnings
-          cargo clippy --manifest-path crates/gpui-react-controls/Cargo.toml --all-targets --all-features -- -D warnings
-          cargo clippy --manifest-path crates/gpui-react-host/Cargo.toml --all-targets --all-features -- -D warnings
-          cargo clippy --manifest-path crates/gpui-react-runtime/Cargo.toml --all-targets --all-features -- -D warnings
-          cargo clippy --manifest-path fixtures/bridge-performance/Cargo.toml --all-targets --all-features -- -D warnings
-          cargo clippy --manifest-path fixtures/bridge-gpu-component/Cargo.toml --all-targets --all-features -- -D warnings
-          cargo clippy --manifest-path fixtures/bridge-counter/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Build and test packages
         run: |
-          bun run --cwd packages/bridge build
-          bun run --cwd packages/bridge test
-          bun run --cwd packages/bridge-controls build
+          bun run build
+          bun run test

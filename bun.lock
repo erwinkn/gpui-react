@@ -15,11 +15,10 @@
         "vitest": "^4.0.18",
       },
     },
-    "fixtures/bridge-counter": {
+    "fixtures/counter": {
       "name": "@gpui-react/counter-example",
       "version": "0.1.0",
       "dependencies": {
-        "@gpui-react/controls": "workspace:*",
         "@gpui-react/core": "workspace:*",
         "@gpui-react/gpu-example": "workspace:*",
         "react": "19.2.4",
@@ -29,22 +28,20 @@
         "typescript": "^5.3.0",
       },
     },
-    "fixtures/bridge-gpu-component": {
+    "fixtures/gpu-component": {
       "name": "@gpui-react/gpu-example",
       "version": "0.1.0",
       "dependencies": {
-        "@gpui-react/controls": "workspace:*",
         "@gpui-react/core": "workspace:*",
       },
       "peerDependencies": {
         "react": "^19.2.0",
       },
     },
-    "fixtures/bridge-pierre": {
+    "fixtures/pierre": {
       "name": "@gpui-react/pierre-example",
       "version": "0.1.0",
       "dependencies": {
-        "@gpui-react/controls": "workspace:*",
         "@gpui-react/core": "workspace:*",
         "react": "19.2.4",
       },
@@ -53,7 +50,7 @@
         "typescript": "^5.3.0",
       },
     },
-    "packages/bridge": {
+    "packages/core": {
       "name": "@gpui-react/core",
       "version": "0.1.0",
       "dependencies": {
@@ -69,20 +66,7 @@
         "react": "^19.2.0",
       },
     },
-    "packages/bridge-controls": {
-      "name": "@gpui-react/controls",
-      "version": "0.1.0",
-      "devDependencies": {
-        "@gpui-react/core": "workspace:*",
-        "@types/react": "^19.2.0",
-        "typescript": "^5.3.0",
-      },
-      "peerDependencies": {
-        "@gpui-react/core": "^0.1.0",
-        "react": "^19.2.0",
-      },
-    },
-    "packages/bridge-runtime": {
+    "packages/runtime": {
       "name": "@gpui-react/runtime",
       "version": "0.1.0",
       "devDependencies": {
@@ -149,17 +133,15 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.27.2", "", { "os": "win32", "cpu": "x64" }, "sha512-sRdU18mcKf7F+YgheI/zGf5alZatMUTKj/jNS6l744f9u3WFu4v7twcUI9vu4mknF4Y9aDlblIie0IM+5xxaqQ=="],
 
-    "@gpui-react/controls": ["@gpui-react/controls@workspace:packages/bridge-controls"],
+    "@gpui-react/core": ["@gpui-react/core@workspace:packages/core"],
 
-    "@gpui-react/core": ["@gpui-react/core@workspace:packages/bridge"],
+    "@gpui-react/counter-example": ["@gpui-react/counter-example@workspace:fixtures/counter"],
 
-    "@gpui-react/counter-example": ["@gpui-react/counter-example@workspace:fixtures/bridge-counter"],
+    "@gpui-react/gpu-example": ["@gpui-react/gpu-example@workspace:fixtures/gpu-component"],
 
-    "@gpui-react/gpu-example": ["@gpui-react/gpu-example@workspace:fixtures/bridge-gpu-component"],
+    "@gpui-react/pierre-example": ["@gpui-react/pierre-example@workspace:fixtures/pierre"],
 
-    "@gpui-react/pierre-example": ["@gpui-react/pierre-example@workspace:fixtures/bridge-pierre"],
-
-    "@gpui-react/runtime": ["@gpui-react/runtime@workspace:packages/bridge-runtime"],
+    "@gpui-react/runtime": ["@gpui-react/runtime@workspace:packages/runtime"],
 
     "@gpui-react/scripts": ["@gpui-react/scripts@workspace:scripts"],
 

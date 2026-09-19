@@ -9,9 +9,9 @@ const env = {
   CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "3",
 }
 const builds = [
-  ["fixtures/bridge-counter/Cargo.toml", "--features", "interaction-tests"],
-  ["crates/gpui-react-host/Cargo.toml"],
-  ["fixtures/bridge-counter/Cargo.toml", "--features", "interaction-tests"],
+  ["fixtures/counter/Cargo.toml", "--features", "interaction-tests"],
+  ["crates/gpui-react-runtime/Cargo.toml"],
+  ["fixtures/counter/Cargo.toml", "--features", "interaction-tests"],
 ]
 for (const [manifest, ...args] of builds) {
   const child = Bun.spawn(["cargo", "build", "--release", "--manifest-path", manifest!, ...args], {

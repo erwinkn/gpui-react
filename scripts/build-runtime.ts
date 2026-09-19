@@ -11,6 +11,6 @@ const build = Bun.spawn(["cargo", "build", "--release", "--locked", "--manifest-
   stdout: "inherit", stderr: "inherit",
 })
 if (await build.exited !== 0) throw Error("Default native runtime build failed")
-const destination = join(root, "packages/bridge-runtime/gpui-react-runtime.darwin-arm64.node")
+const destination = join(root, "packages/runtime/gpui-react-runtime.darwin-arm64.node")
 copyFileSync(join(target, "release/libgpui_react_runtime.dylib"), destination)
 console.log(destination)

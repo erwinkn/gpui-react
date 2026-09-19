@@ -6,7 +6,7 @@ import { heapStats } from "bun:jsc"
 const ROWS = Number(process.argv[2] ?? 5000)
 function heap(): number { Bun.gc(true); return process.memoryUsage().heapUsed }
 function counts() { Bun.gc(true); const c = heapStats().objectTypeCounts; return { Object: c.Object ?? 0, Array: c.Array ?? 0, string: c.string ?? 0, total: heapStats().objectCount } }
-// Shape of `Host` in packages/bridge/src/index.ts: 8 fields, one `initial` array.
+// Shape of `Host` in packages/core/src/index.ts: 8 fields, one `initial` array.
 type Host = { id: number; component: string; props: object; root: object; initial: Host[]; mounted: boolean; subscription: number | null; public: null }
 const root = {}
 const propsShared = Array.from({ length: ROWS + 3 }, () => ({ text: "x", style: 1 })) // stands in for React's props objects (owned by React, not us)

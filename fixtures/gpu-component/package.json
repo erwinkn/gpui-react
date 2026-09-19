@@ -8,7 +8,6 @@
   },
   "dependencies": {
     "@gpui-react/core": "workspace:*",
-    "@gpui-react/controls": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.2.0"

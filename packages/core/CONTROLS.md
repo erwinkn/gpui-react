@@ -1,15 +1,15 @@
 # React wrappers for native GPUI controls
 
-`@gpui-react/controls` supplies typed React wrappers. The default
+`@gpui-react/core` supplies typed React wrappers. The default
 `@gpui-react/runtime` package registers all controls below. A custom application
 composition must register the matching
-[`gpui-react-controls`](https://github.com/erwinkn/gpui-react/tree/bridge/minimal-react-gpui/crates/gpui-react-controls)
+[`gpui-react`](https://github.com/erwinkn/gpui-react/tree/bridge/minimal-react-gpui/crates/gpui-react)
 Rust crate. React and `@gpui-react/core` are peer dependencies. Install matching
 versions of the bridge packages.
 
 ```tsx
 import { createRef } from "react"
-import { Input, type InputRef } from "@gpui-react/controls"
+import { Input, type InputRef } from "@gpui-react/core"
 
 const input = createRef<InputRef>()
 root.render(<Input
@@ -156,7 +156,7 @@ through the Rust `document_text` helper.
 
 ```tsx
 import { createRef } from "react"
-import { Document, Text, type DocumentRef } from "@gpui-react/controls"
+import { Document, Text, type DocumentRef } from "@gpui-react/core"
 
 const document = createRef<DocumentRef>()
 root.render(<Document ref={document} search={{ query: "reader", activeIndex: 0 }}>

@@ -12,7 +12,7 @@ const published = process.argv.includes("--published")
 const manifest = JSON.parse(readFileSync(join(artifacts, "bridge-manifest.json"), "utf8"))
 if (published) assert.equal(manifest.sourceDirty, false, "Published artifacts must use committed source")
 const hash = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex")
-assert.deepEqual(manifest.packages.map((item: { name: string }) => item.name).sort(), ["@gpui-react/controls", "@gpui-react/core", "@gpui-react/runtime"])
+assert.deepEqual(manifest.packages.map((item: { name: string }) => item.name).sort(), ["@gpui-react/core", "@gpui-react/runtime"])
 for (const item of manifest.packages) assert.equal(hash(join(artifacts, item.filename)), item.sha256)
 
 const temporary = mkdtempSync(join(tmpdir(), "gpui-react-install-"))
@@ -54,7 +54,7 @@ try {
     assert.equal(commonjs,bindings);
     assert.equal(NativeHost,bindings.NativeHost);
     assert.equal(NativeClient,bindings.NativeClient);
-    assert.equal(bridgeRuntimeVersion(),1);
+    assert.equal(bridgeRuntimeVersion(),2);
     assert.deepEqual(Object.keys(commonjs).sort(),['NativeClient','NativeHost','bridgeRuntimeVersion']);
     console.log('loader passed');
   `
@@ -75,10 +75,10 @@ try {
   await run("bun", ["build", "browser-entry.js", "--target=browser", "--outfile", "browser-bundle.js"])
   const browser = readFileSync(join(directory, "browser-bundle.js"), "utf8")
   assert.ok(!browser.includes(".node"), "Browser resolution pulled in the native loader")
-  await assert.rejects(run("node", ["browser-bundle.js"]), /The new bridge has no browser driver yet/)
+  await assert.rejects(run("node", ["browser-bundle.js"]), /The bridge currently has no browser driver/)
   console.log("PASS unsupported-platform and browser errors")
 
-  for (const file of ["host.ts", "worker.tsx", "commonjs.cts"]) cpSync(join(root, "fixtures/bridge-package", file), join(directory, file))
+  for (const file of ["host.ts", "worker.tsx", "commonjs.cts"]) cpSync(join(root, "fixtures/package", file), join(directory, file))
   writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: {
     target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", jsx: "react-jsx",
     strict: true, noEmit: true, skipLibCheck: false, types: ["node", "react"],
@@ -86,7 +86,7 @@ try {
   await run("node", ["node_modules/typescript/bin/tsc"])
   console.log("PASS installed ESM and CommonJS TypeScript declarations")
   assert.match(await run("bun", ["host.ts"]), /Installed controls passed:/)
-  await assert.rejects(run("bun", ["host.ts"], directory, "unknown"), /unknown component counter/)
+  await assert.rejects(run("bun", ["host.ts"], directory, "unknown"), /Unknown native component counter/)
   console.log("PASS installed source worker and default component boundary")
 
   await run("bun", ["build", "--compile", "host.ts", "worker.tsx", "--outfile", "compiled/application"])
@@ -97,7 +97,7 @@ try {
   rmSync(directory, { recursive: true, force: true })
   assert.equal(existsSync(directory), false)
   assert.match(await run(executable, [], relocated), /Installed controls passed:/)
-  await assert.rejects(run(executable, [], relocated, "unknown"), /unknown component counter/)
+  await assert.rejects(run(executable, [], relocated, "unknown"), /Unknown native component counter/)
   console.log("PASS relocated executable without source, node_modules, or build directory")
 } finally {
   rmSync(temporary, { recursive: true, force: true })

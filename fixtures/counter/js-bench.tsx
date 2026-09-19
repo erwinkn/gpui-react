@@ -10,7 +10,7 @@
 // wires are otherwise dominated by where collections land).
 // Scene "numbers" is synthetic: a list per row with numeric props.
 import { createRoot, decodeWire, type KindSchema, type Transport, type NativeEvent, type TransactionReply } from "@gpui-react/core"
-import { Container, Document, List, Text } from "@gpui-react/controls"
+import { Container, Document, List, Text } from "@gpui-react/core"
 import { readFileSync } from "node:fs"
 import { heapStats } from "bun:jsc"
 import { memo } from "react"

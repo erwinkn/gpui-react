@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { createRef, useLayoutEffect } from "react"
 import { attachApplication } from "@gpui-react/core/application"
 import { nativeComponent, type NativeRef } from "@gpui-react/core"
-import { Input, List, Text, type InputEvent, type InputRef, type ListEvent } from "@gpui-react/controls"
+import { Input, List, Text, type InputEvent, type InputRef, type ListEvent } from "@gpui-react/core"
 
 import { Texture } from "@gpui-react/gpu-example"
 

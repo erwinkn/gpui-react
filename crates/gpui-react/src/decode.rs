@@ -424,7 +424,7 @@ impl Visitor<'_> for ComponentSeed<'_> {
 
 /// Both wires must decode a real mount into the same typed operations. The
 /// payloads are what the JavaScript bridge sealed for the frame-cost scene
-/// (`fixtures/bridge-counter/js-wire-dump.tsx`); the props types here mirror
+/// (`fixtures/counter/js-wire-dump.tsx`); the props types here mirror
 /// the controls' field lists exactly, because the binary wire is positional.
 /// The test is skipped when the dumps are absent.
 #[cfg(test)]
