@@ -145,4 +145,18 @@ fn main() {
     );
     assert_eq!(h.query(35)["painted"]["bounds"]["y"], -60.);
     println!("PASS keyed row reorder preserves the reader anchor");
+    h.command(22, json!({"type":"end"}));
+    h.draw();
+    let anchor = h.command_op(22, json!({"type":"scrollTo","index":2,"offset":-40}));
+    h.apply(json!([
+        {"op":"props","id":35,"props":{"text":"taller existing row","style":{"height":140}}},
+        row(39,34),place(39,Some(22),None),anchor
+    ]));
+    h.draw();
+    assert_eq!(
+        h.query(25)["painted"]["bounds"]["y"],
+        40.,
+        "a sibling insertion must not suppress an existing row's height invalidation"
+    );
+    println!("PASS changed row plus sibling append plus anchor in one transaction");
 }

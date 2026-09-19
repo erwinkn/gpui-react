@@ -2,7 +2,7 @@ use gpui::px;
 use serde::{Deserialize, Deserializer};
 
 /// A CSS color parsed once when props enter Rust.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color(pub gpui::Hsla);
 impl<'de> Deserialize<'de> for Color {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -21,13 +21,13 @@ impl<'de> Deserialize<'de> for Color {
         ))
     }
 }
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum Length {
     Pixels(#[serde(deserialize_with = "finite")] f32),
     Named(NamedLength),
 }
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 pub enum NamedLength {
     #[serde(rename = "100%")]
     Fill,
@@ -43,7 +43,7 @@ impl Length {
         }
     }
 }
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum Direction {
     Row,
@@ -51,7 +51,7 @@ pub enum Direction {
     RowReverse,
     ColumnReverse,
 }
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum Align {
     Start,
@@ -59,7 +59,7 @@ pub enum Align {
     End,
     Stretch,
 }
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct Style {
     pub width: Option<Length>,

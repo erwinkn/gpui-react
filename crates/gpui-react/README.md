@@ -74,7 +74,9 @@ Containers with native measurement caches can override
 `ReactChildren::children_changed`. The default does nothing. The host reports
 affected direct child entities after descendant prop, structure, or successful
 command changes. It groups changes before the next command/query or transaction
-end. A structural `set_children` already provides that parent's invalidation.
+end. Immediate topology changes use `set_children`. Prop or descendant changes
+inside retained children are still reported when that same transaction also
+changes the parent's child list.
 This lets a virtual list invalidate changed row heights before applying a scroll
 anchor. It does not copy child props or create a second tree. Native changes
 outside bridge transactions still use the component's ordinary GPUI cache APIs.

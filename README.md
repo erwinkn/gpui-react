@@ -35,6 +35,8 @@ Delayed replacements require the input revision. Lists can use a bounded React
 row window over 100,000 logical rows, with missing-row requests and ordered
 scroll anchors. Horizontal panes can share one native scroll handle. Painted
 geometry includes the native root, draw, transaction, viewport, and scale.
+[Count-update measurements](./docs/bridge-list-performance.md) compare the native
+list binding with direct GPUI and document the range-based height-index update.
 
 GPU tests cover platform input, accessibility, nested and linked scrolling,
 large-list anchors, layout changes, and click routing. The source and relocated

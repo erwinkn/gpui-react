@@ -52,3 +52,8 @@ native paint, including a query inside the same transaction as a layout change.
 Text selection/search services and broad performance comparisons are still in
 progress. The current `Text` control is a native leaf with explicit text and
 paint inspection. It does not yet replace the old document text services.
+
+List count updates preserve measured rows and update only the changed native
+index range. The [release measurements](../../docs/bridge-list-performance.md)
+include direct GPUI costs and an allocation regression. Run the ignored
+`list_count_update_cost` test separately to repeat the measurement.

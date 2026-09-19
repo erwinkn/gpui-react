@@ -1,0 +1,171 @@
+{
+  "date": "2026-09-19",
+  "hardware": "Apple M5 Max",
+  "memoryBytes": 137438953472,
+  "macOS": "26.6.2",
+  "rust": "1.97.1",
+  "scope": "Native mutation only; excludes JSON, worker transport, layout, paint, and presentation.",
+  "baselineGpuix": "6f867ea",
+  "baselineGpui": "bea32f070b",
+  "afterGpui": "25402064a7",
+  "samplesPerCase": 200,
+  "warmupPerCase": 20,
+  "before": [
+    {
+      "label": "gpui-splice-unhinted-lower-bound",
+      "logicalRows": 1000,
+      "samples": 200,
+      "p50Us": 1.291,
+      "p95Us": 1.4589999999999999,
+      "maxUs": 1.75,
+      "allocationsMean": 9,
+      "allocatedBytesMean": 8720,
+      "freedBytesMean": 8720
+    },
+    {
+      "label": "gpui-splice-reseed-all",
+      "logicalRows": 1000,
+      "samples": 200,
+      "p50Us": 16.75,
+      "p95Us": 17.5,
+      "maxUs": 19.415999999999997,
+      "allocationsMean": 119,
+      "allocatedBytesMean": 266720,
+      "freedBytesMean": 266720
+    },
+    {
+      "label": "bridge-count-with-60-supplied-rows",
+      "logicalRows": 1000,
+      "samples": 200,
+      "p50Us": 39.625,
+      "p95Us": 42.458,
+      "maxUs": 67.875,
+      "allocationsMean": 312,
+      "allocatedBytesMean": 460424,
+      "freedBytesMean": 460424
+    },
+    {
+      "label": "gpui-splice-unhinted-lower-bound",
+      "logicalRows": 100000,
+      "samples": 200,
+      "p50Us": 3.0,
+      "p95Us": 3.209,
+      "maxUs": 3.292,
+      "allocationsMean": 12,
+      "allocatedBytesMean": 11792,
+      "freedBytesMean": 11792
+    },
+    {
+      "label": "gpui-splice-reseed-all",
+      "logicalRows": 100000,
+      "samples": 200,
+      "p50Us": 2237.7920000000004,
+      "p95Us": 2525.666,
+      "maxUs": 2701.375,
+      "allocationsMean": 9144,
+      "allocatedBytesMean": 19827552,
+      "freedBytesMean": 19827552
+    },
+    {
+      "label": "bridge-count-with-60-supplied-rows",
+      "logicalRows": 100000,
+      "samples": 200,
+      "p50Us": 2421.916,
+      "p95Us": 2541.708,
+      "maxUs": 2591.125,
+      "allocationsMean": 9355,
+      "allocatedBytesMean": 20039688,
+      "freedBytesMean": 20039688
+    }
+  ],
+  "after": [
+    {
+      "label": "gpui-splice-unhinted-lower-bound",
+      "logicalRows": 1000,
+      "samples": 200,
+      "p50Us": 1.375,
+      "p95Us": 1.5,
+      "maxUs": 1.583,
+      "allocationsMean": 9,
+      "allocatedBytesMean": 8720,
+      "freedBytesMean": 8720
+    },
+    {
+      "label": "gpui-splice-reseed-all",
+      "logicalRows": 1000,
+      "samples": 200,
+      "p50Us": 14.875,
+      "p95Us": 15.667000000000002,
+      "maxUs": 32.333,
+      "allocationsMean": 111,
+      "allocatedBytesMean": 107600,
+      "freedBytesMean": 107600
+    },
+    {
+      "label": "gpui-splice-hinted",
+      "logicalRows": 1000,
+      "samples": 200,
+      "p50Us": 1.375,
+      "p95Us": 1.458,
+      "maxUs": 1.5,
+      "allocationsMean": 9,
+      "allocatedBytesMean": 8720,
+      "freedBytesMean": 8720
+    },
+    {
+      "label": "bridge-count-with-60-supplied-rows",
+      "logicalRows": 1000,
+      "samples": 200,
+      "p50Us": 1.458,
+      "p95Us": 1.917,
+      "maxUs": 1.9589999999999999,
+      "allocationsMean": 9,
+      "allocatedBytesMean": 8720,
+      "freedBytesMean": 8720
+    },
+    {
+      "label": "gpui-splice-unhinted-lower-bound",
+      "logicalRows": 100000,
+      "samples": 200,
+      "p50Us": 3.208,
+      "p95Us": 3.4170000000000003,
+      "maxUs": 3.75,
+      "allocationsMean": 12,
+      "allocatedBytesMean": 11792,
+      "freedBytesMean": 11792
+    },
+    {
+      "label": "gpui-splice-reseed-all",
+      "logicalRows": 100000,
+      "samples": 200,
+      "p50Us": 1606.416,
+      "p95Us": 1684.541,
+      "maxUs": 1758.125,
+      "allocationsMean": 9130,
+      "allocatedBytesMean": 9604560,
+      "freedBytesMean": 9604560
+    },
+    {
+      "label": "gpui-splice-hinted",
+      "logicalRows": 100000,
+      "samples": 200,
+      "p50Us": 3.125,
+      "p95Us": 3.333,
+      "maxUs": 3.4589999999999996,
+      "allocationsMean": 12,
+      "allocatedBytesMean": 11792,
+      "freedBytesMean": 11792
+    },
+    {
+      "label": "bridge-count-with-60-supplied-rows",
+      "logicalRows": 100000,
+      "samples": 200,
+      "p50Us": 3.0410000000000004,
+      "p95Us": 3.208,
+      "maxUs": 3.375,
+      "allocationsMean": 12,
+      "allocatedBytesMean": 11792,
+      "freedBytesMean": 11792
+    }
+  ]
+}

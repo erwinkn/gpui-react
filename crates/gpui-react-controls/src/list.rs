@@ -98,7 +98,7 @@ impl VirtualList {
     pub fn new(props: ListProps, window: &mut Window, _: &mut Context<Self>) -> Self {
         let estimate = px(props
             .estimated_item_height
-            .unwrap_or(window.line_height().into())
+            .unwrap_or_else(|| window.line_height().into())
             .max(1.));
         let state = Self::make_state(&props, props.item_count.unwrap_or(0), estimate);
         Self {
@@ -115,14 +115,14 @@ impl VirtualList {
     }
     fn make_state(props: &ListProps, count: usize, estimate: Pixels) -> ListState {
         let state = ListState::new(
-            count,
+            0,
             match props.alignment {
                 Alignment::Top => ListAlignment::Top,
                 Alignment::Bottom => ListAlignment::Bottom,
             },
             px(props.overdraw.unwrap_or(0.).max(0.)),
-        )
-        .with_uniform_item_height(estimate);
+        );
+        state.splice_with_uniform_height(0..0, count, estimate);
         if props.follow_tail {
             state.set_follow_mode(FollowMode::Tail);
         }
@@ -318,18 +318,24 @@ impl ReactView for VirtualList {
     }
     fn set_props(&mut self, props: Self::Props, window: &mut Window, cx: &mut Context<Self>) {
         let old_range = self.supplied();
-        self.state
-            .set_item_focus_handles(old_range.start, old_range.clone().map(|_| None));
         let estimate = px(props
             .estimated_item_height
-            .unwrap_or(window.line_height().into())
+            .unwrap_or_else(|| window.line_height().into())
             .max(1.));
         let count = props.item_count.unwrap_or(self.rows.len());
-        if props.alignment != self.props.alignment
+        let start = if props.item_count.is_some() {
+            props.window_start.min(count)
+        } else {
+            0
+        };
+        let range = start..start.saturating_add(self.rows.len()).min(count);
+        let remapped = range != old_range;
+        let style_changed = props.style != self.props.style;
+        let rebuilt = props.alignment != self.props.alignment
             || props.overdraw != self.props.overdraw
             || estimate != self.estimate
-            || props.item_count.is_some() != self.props.item_count.is_some()
-        {
+            || props.item_count.is_some() != self.props.item_count.is_some();
+        if rebuilt {
             let top = self.state.logical_scroll_top();
             let follow =
                 props.follow_tail && (!self.props.follow_tail || self.state.is_following_tail());
@@ -338,11 +344,17 @@ impl ReactView for VirtualList {
                 self.state.scroll_to(top);
             }
         } else {
+            if remapped {
+                self.state
+                    .set_item_focus_handles(old_range.start, old_range.map(|_| None));
+            }
             let old = self.state.item_count();
             if count != old {
-                self.state
-                    .splice(count.min(old)..old, count.saturating_sub(old));
-                self.state = self.state.clone().with_uniform_item_height(estimate);
+                self.state.splice_with_uniform_height(
+                    count.min(old)..old,
+                    count.saturating_sub(old),
+                    estimate,
+                );
             }
             if props.follow_tail != self.props.follow_tail {
                 self.state.set_follow_mode(if props.follow_tail {
@@ -354,9 +366,15 @@ impl ReactView for VirtualList {
         }
         self.props = props;
         self.estimate = estimate;
-        self.set_focus_handles();
-        self.state.remeasure_items(self.supplied());
-        self.requested_range = None;
+        if rebuilt || remapped {
+            self.set_focus_handles();
+        }
+        if style_changed || remapped {
+            self.state.remeasure_items(self.supplied());
+        }
+        if rebuilt || remapped {
+            self.requested_range = None;
+        }
         self.revision += 1;
         cx.notify();
     }
@@ -374,6 +392,9 @@ impl ReactChildren for VirtualList {
         cx.notify();
     }
     fn set_children(&mut self, children: Vec<AnyView>, _: &mut Window, cx: &mut Context<Self>) {
+        if self.rows.iter().map(|row| &row.view).eq(children.iter()) {
+            return;
+        }
         let old_range = self.supplied();
         let top = self.state.logical_scroll_top();
         let anchored = if self.props.item_count.is_none() && !self.state.is_following_tail() {
@@ -412,20 +433,22 @@ impl ReactChildren for VirtualList {
                 .zip(rows[prefix..].iter().rev())
                 .take_while(|(a, b)| a.view.entity_id() == b.view.entity_id())
                 .count();
-            self.state.splice_focusable(
+            self.state.splice_focusable_with_uniform_height(
                 prefix..self.rows.len() - suffix,
                 rows[prefix..rows.len() - suffix]
                     .iter()
                     .map(|row| Some(row.focus.clone())),
+                self.estimate,
             );
-            self.state = self.state.clone().with_uniform_item_height(self.estimate);
         } else {
             self.state
                 .set_item_focus_handles(old_range.start, old_range.map(|_| None));
         }
         self.rows = rows;
-        self.set_focus_handles();
-        self.state.remeasure_items(self.supplied());
+        if self.props.item_count.is_some() {
+            self.set_focus_handles();
+            self.state.remeasure_items(self.supplied());
+        }
         if pinned_top {
             self.state.scroll_to(ListOffset::default());
         } else if let Some(index) =

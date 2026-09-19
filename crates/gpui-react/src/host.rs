@@ -297,7 +297,7 @@ impl Host {
                     if before == Some(child) {
                         continue;
                     }
-                    self.changed_ancestors(child, &mut changed);
+                    self.changed_parent_ancestors(child, &mut changed);
                     self.detach(child, &mut dirty);
                     let children = self.child_ids_mut(parent);
                     let index = before
@@ -306,11 +306,11 @@ impl Host {
                     children.insert(index, child);
                     self.entries.get_mut(&child).unwrap().links.parent = Some(parent);
                     dirty.insert(parent);
-                    self.changed_ancestors(child, &mut changed);
+                    self.changed_parent_ancestors(child, &mut changed);
                 }
                 Action::Remove { ids } => {
                     for id in ids {
-                        self.changed_ancestors(id, &mut changed);
+                        self.changed_parent_ancestors(id, &mut changed);
                         self.detach(id, &mut dirty);
                         let mut entry = self.entries.remove(&id).unwrap();
                         if let Some(subscription) = entry.links.subscription {
@@ -323,7 +323,7 @@ impl Host {
                     }
                 }
                 Action::Hidden { id, hidden } => {
-                    self.changed_ancestors(id, &mut changed);
+                    self.changed_parent_ancestors(id, &mut changed);
                     let links = &mut self.entries.get_mut(&id).unwrap().links;
                     links.hidden = hidden;
                     if let Some(parent) = links.parent {
@@ -383,7 +383,6 @@ impl Host {
         for parent in dirty.drain() {
             match parent {
                 Some(id) => {
-                    changed.remove(&id); // set_children already handles structural invalidation.
                     if let Some(entry) = self.entries.get(&id) {
                         let children = self.visible(&entry.links.children);
                         entry.mounted.set_children(children, window, cx)?;
@@ -411,6 +410,14 @@ impl Host {
             }
         }
         Ok(())
+    }
+
+    fn changed_parent_ancestors(&self, child: u64, changed: &mut HashMap<u64, HashSet<u64>>) {
+        // set_children handles this immediate parent's topology. Ancestors can
+        // still cache the size of the changed parent as one of their rows.
+        if let Some(Some(Some(parent))) = self.entries.get(&child).map(|entry| entry.links.parent) {
+            self.changed_ancestors(parent, changed);
+        }
     }
 
     fn changed_ancestors(&self, mut child: u64, changed: &mut HashMap<u64, HashSet<u64>>) {

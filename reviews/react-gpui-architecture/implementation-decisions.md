@@ -164,3 +164,35 @@ consumer fixtures, measured performance, and package release remain goal work.
 
 I stand behind this correctness checkpoint and its stated limits. It is not the
 final performance or release checkpoint.
+
+## List measurement and allocation checkpoint
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Measure native list mutation cost separately from frame cost. | Mix transport, layout, and painting into one benchmark. | Medium | This result cannot establish application frame rate or total bridge overhead. Those measurements remain required. The test records both direct GPUI and binding operations with the same height hints. |
+| Preserve measured rows and existing hints when filling missing uniform hints. | Treat the initializer as an implicit remeasure operation. | High | Callers that need remeasurement must use the explicit GPUI remeasure API. A draw-based regression first failed with zero retained measured rows instead of three. |
+| Add two general GPUI splice methods with uniform height hints. | Traverse the full height index after every splice, or access GPUI internals from the binding. | High | The methods add a small API obligation to the GPUI fork. They share the existing splice implementation and preserve its focus and anchor behavior. The source and upstream issue search did not provide this operation. |
+| Compare the list's own style and supplied range before invalidating its rows. | Invalidate all supplied rows on every prop update. | Medium | Layout changes inherited from a parent still need a separate real-use test. This checkpoint does not claim complete coverage of inherited font changes. No second style model is stored. |
+| Keep retained-child prop invalidation even when a sibling changes in the same transaction. | Let the structural child callback replace all branch invalidations. | High | A parent that preserves unchanged child measurements would use stale geometry. The new core regression failed before the fix; the GPU case combines a height change, sibling append, and negative scroll anchor. |
+| Count allocations only on the measured thread with a test-only allocator. | Add runtime instrumentation or use process memory deltas. | High | This omits other threads and allocator metadata. It measures requested allocation bytes, not resident memory. The runtime allocator is unchanged. |
+| Require less than fourfold allocation growth for one append when retained rows grow from 1,000 to 100,000. | Assert a machine-specific time limit or exact allocation count. | Medium | A future index implementation may need a revised structural guard. The margin permits tree-depth variation while rejecting a full-index traversal. The test failed before the fix with 264,688 versus 19,823,984 bytes. |
+| Clear the notification log after the invalidation test's initial tree construction. | Count construction callbacks together with the subsequent update. | High | Initial nested composition can itself invalidate ancestors. The test still requires one notification per affected branch for the measured update. It now also requires a retained child's prop notification during a structural change. |
+
+The measured 100,000-row binding update fell from P50 2,421.92 microseconds and
+20,039,688 allocated bytes to 3.04 microseconds and 11,792 bytes. Direct GPUI's
+equivalent hinted splice measured 3.13 microseconds and 11,792 bytes. The small
+timing difference between the two new paths is noise. Both figures exclude
+React, transport, layout, paint, and presentation.
+
+Validation passed all 32 GPUI list tests, 12 binding tests, 25 controls tests,
+strict binding and controls Clippy checks, and the input, container, and list
+GPU scenarios. The manual benchmark is separate from the normal test suite.
+Source and relocated compiled worker fixtures also passed after the rebuild.
+The benchmark and raw results are in `docs/bridge-list-performance.md` and
+`docs/benchmarks/bridge-list-count.json`.
+
+I stand behind this checkpoint. The open work includes full-frame performance,
+native interaction during a worker stall, lifecycle and failure cases, document
+text services, consumer fixtures, and installed package distribution. The user
+authorized autonomous tested commits; this audit records the decisions without
+adding a new approval step.

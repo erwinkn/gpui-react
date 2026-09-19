@@ -187,8 +187,8 @@ window when it inserts earlier data.
 `paintedRows` records row paint callbacks; `maxScrollY` uses native measured
 heights and estimates. Both can lag current props until layout. Changes to
 alignment, overdraw, or the height estimate rebuild the native list index while
-preserving its anchor where possible. Current count changes also revisit the
-height index; performance validation of this path remains open.
+preserving its anchor where possible. Count changes splice hints into the affected native index range and preserve
+existing measurements. See the [native mutation measurements](../../docs/bridge-list-performance.md).
 
 ## Frame metadata
 

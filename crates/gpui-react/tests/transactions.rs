@@ -275,6 +275,10 @@ fn descendant_updates_invalidate_each_direct_branch_once_before_queries(cx: &mut
             let root = host.view(1).unwrap().clone().downcast::<View>().unwrap();
             let child = host.view(2).unwrap().clone().downcast::<View>().unwrap();
             let leaf = host.view(3).unwrap().clone().downcast::<View>().unwrap();
+            // Initial composition can also change descendant branches. Measure
+            // only notifications from the following transaction.
+            root.update(cx, |root, _| root.changed.clear());
+            child.update(cx, |child, _| child.changed.clear());
             host.apply(
                 tx(
                     2,
@@ -302,9 +306,30 @@ fn descendant_updates_invalidate_each_direct_branch_once_before_queries(cx: &mut
                 cx,
             )
             .unwrap();
-            // Structural synchronization already invalidates this parent.
-            assert_eq!(root.read(cx).changed.len(), 1);
+            // Placement handles topology, but props on a retained child still
+            // invalidate that child's cached size in the same transaction.
+            assert_eq!(
+                root.read(cx).changed,
+                vec![vec![child.entity_id()], vec![leaf.entity_id()]]
+            );
             host.clear(window, cx);
         })
         .unwrap();
+}
+
+#[gpui::test]
+fn prop_invalidation_survives_a_sibling_insert_in_the_same_commit(cx: &mut TestAppContext) {
+    let window = cx.add_window(|_, _| Host::new(registry(), Arc::new(|_| {})));
+    window.update(cx,|host,window,cx| {
+        host.apply(tx(1,json!([create(1),place(None,1,None),create(2),place(Some(1),2,None)])),window,cx).unwrap();
+        let root=host.view(1).unwrap().clone().downcast::<View>().unwrap();
+        let child=host.view(2).unwrap().clone().downcast::<View>().unwrap();
+        host.apply(tx(2,json!([
+            {"op":"props","id":2,"props":{"value":20}},
+            create(3),place(Some(1),3,None),
+            {"op":"query","id":1,"request":1,"value":null}
+        ])),window,cx).unwrap();
+        assert_eq!(root.read(cx).changed,vec![vec![child.entity_id()]],"a parent can preserve existing child caches during insertion; their prop changes must still be reported");
+        host.clear(window,cx);
+    }).unwrap();
 }
