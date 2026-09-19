@@ -488,3 +488,17 @@ TypeScript check pass. The external composition still needs rebuilding at the
 published fix before its existing edge suite can finish. I stand behind this
 compatibility repair. Future consumer checks must include the test API used by
 that consumer, as well as its runtime exports and production behavior.
+
+### Counted-click consumer validation
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Test native word/line selection on Pierre's deletions side. | Expect the editable additions side to select words without its JS document model. | High | The first external probe failed because it omitted the model that handles `select.clickCount` on that side. The previous and current viewport have the same ownership. The corrected probe preserves native event behavior. |
+| Keep both adapters on published `5f5de7b` and preserve the default JS path. | Move the consumer onto the new bridge during this compatibility repair. | High | This validates the requested legacy compatibility and the optional adapter separately. It does not certify a full application migration to the new bridge. |
+
+Release legacy native, new native, and WASM builds pass. Direct legacy,
+source/relocated new bridge, and wasm-bindgen checks pass. Cargo resolves one
+GPUI crate. The owner reports all seven default native suites and the full app
+worker/installed-library checks pass. Browser suites pass at the earlier
+`af4ee6d` WASM pin; CI is rebuilding at the new pin. I stand behind this test
+correction and compatibility checkpoint. The broader framework goal is open.

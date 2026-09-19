@@ -61,3 +61,26 @@ undo, and read-only input. The rebuilt legacy Pierre probe also passes its IME
 checks. The new composition's source/relocated probes and the legacy WASM build
 plus wasm-bindgen pass at the updated pin. Updated artifacts and checksums are
 in the same handoff folder under names ending in `af4ee6d`.
+
+## Counted-click test API and complete native suites
+
+Published framework `5f5de7b61a57a44b4e13466068d5cc056de3a9a2` restores the
+optional fifth click-count argument on both mouse-down and mouse-up events.
+Both compositions build at this pin, with one GPUI crate and unchanged GPUI
+ref. The direct legacy probe and the new source/relocated probes pass. The
+legacy WASM build and wasm-bindgen pass. Current artifacts and SHA256 hashes
+are in the handoff folder under names ending in `5f5de7b`.
+
+The fixture's word-selection assertion now uses the native deletions side.
+The additions side sends the click count to the external JS document model;
+a fixture without that model cannot expect it to perform word selection.
+No editor behavior changed to satisfy this test.
+
+The Pierre owner reports that all seven default native editor/playground suites,
+636 unit/parity tests, source/relocated app worker tests, and installed-library
+native rendering/typing pass. The owner published the source, including the
+shared viewport and optional adapter, at Pierre commit
+`fe426a371b1edd20f15237070f2d67c42ec78f33`. All six Rust pins use `5f5de7b`.
+The npm pins and default JS path remain unchanged. The owner also reports full
+local and preview WebGPU/WebGL success using the `af4ee6d` WASM artifact. CI is
+rebuilding at `5f5de7b`; those browser results are not yet claimed for that pin.

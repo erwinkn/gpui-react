@@ -41,8 +41,8 @@ try {
   }]])
   assert.ok(renderer.getPaintedText().includes("patched legacy"))
   commit([["setCustomProp", 1, "spec", {
-    session: 1, documentVersion: 3, text: "patched legacy", readOnly: true,
-    rows: [{ id: "line", left: { text: "patched legacy", number: 1, start: 0, side: "additions" } }],
+    session: 1, documentVersion: 3, text: "", oldText: "patched legacy", readOnly: true,
+    rows: [{ id: "line", left: { text: "patched legacy", number: 1, start: 0, side: "deletions" } }],
   }]])
   renderer.simulateClick(85, 10, 0, undefined, 2)
   assert.deepEqual(JSON.parse(renderer.simulateInputMethod("ignored", false)).selected, [0, 7])
