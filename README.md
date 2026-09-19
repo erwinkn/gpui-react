@@ -13,6 +13,21 @@ and native `<markdown>`.
 
 ## Quickstart
 
+### New asynchronous integration
+
+The replacement integration is being developed in
+[`crates/gpui-react`](./crates/gpui-react/README.md) and
+[`packages/bridge`](./packages/bridge/README.md). The Rust crate wraps ordinary
+GPUI `Render` views with typed props and optional event, command, query, and
+child capabilities. The JavaScript package uses React 19.2's mutation reconciler
+and an asynchronous transaction transport. It does not import the existing
+GPUiX renderer or maintain a worker-side Rust tree.
+
+This is an implementation checkpoint, not a replacement application runtime
+release. The native host connection and full component regression coverage are
+still in progress. The existing application API below remains usable. See the
+[accepted architecture and scenarios](./reviews/react-gpui-architecture/scenario-matrix.md).
+
 ### Native-owned application loop on macOS
 
 `@gpuix/react/application` separates the main AppKit thread from application JavaScript. Put React, application state, and plugin imports in an explicit worker module. Do not pass React elements or closures across runtimes.

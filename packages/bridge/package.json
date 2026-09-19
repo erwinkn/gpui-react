@@ -1,0 +1,13 @@
+{
+  "name": "@gpuix/bridge",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Minimal asynchronous React bindings for GPUI",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist", "README.md"],
+  "scripts": { "build": "tsc", "test": "vitest run tests" },
+  "dependencies": { "react-reconciler": "0.33.0" },
+  "peerDependencies": { "react": "^19.2.0" },
+  "devDependencies": { "@types/react": "^19.2.0", "@types/react-reconciler": "^0.28.0", "typescript": "^5.3.0", "vitest": "^4.0.18" }
+}
