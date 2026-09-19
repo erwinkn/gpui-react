@@ -533,3 +533,32 @@ suite passes 46 tests, with one manual benchmark intentionally ignored. GPUI
 commit `1ec60cb6a3683fad4f49cd492afcb04463e789b8` is published separately. Pierre
 keeps its fully tested `5f5de7b` framework pin; this metadata change does not
 silently move that consumer onto a new GPUI revision.
+
+### Deferred document text and draw completion
+
+The first native regression showed that ordinary `gpui::deferred` text was
+absent from the document registry. Replacing the App global with GPUI's drawing
+context fixed ownership, but an effect-queue completion still left an old
+content revision after `Window::draw` returned. A second failing regression
+captured that boundary before the completion fix.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Add `Window::on_draw_complete` as a general GPUI callback, registered during paint and invoked before draw returns. | Finalize through `App::defer` or a high-priority deferred element. | Medium | The effect queue runs too late for native callers after draw; a priority convention cannot guarantee ordering against arbitrary nested deferred content. The new callback must remain a metadata completion hook, with no JS wait or layout policy. |
+| Run completion after frame installation and focus listeners, outside drawing context. | Invoke it while a partially constructed frame is still active. | High | A callback cannot add drawing operations. It can see newer native props if focus listeners changed them. Document search reports therefore use the query revision and match offset captured for the paint. |
+| Carry one shared weak document reference through the general element context. | Pass a document owner explicitly through every native component or leave the last document in an App global. | High | Nested deferred documents must retain their own scope. A weak reference prevents a retained draw record from keeping a removed document alive. |
+| Finalize caches and content revision once all ordinary and deferred paint is complete. | Finalize when the document root's child paint callback returns. | High | Early pruning drops deferred cache entries, can rescan unchanged text, and emits incomplete search counts. Tests check cache identity, repeated draws, removal, and two draws in one native update. |
+| Preserve paint-order text registration and the existing uncached-content requirement. | Build a second text tree or replay selection metadata for GPUI caches. | High | Cached paint still skips element callbacks. This change makes no cache-support claim and does not introduce another retained content model. |
+| Test a floating native view outside its parent layout box, with an independent nested document. | Test registry contents without native hit testing or pixels. | High | The offscreen GPU test verifies double-click selection, clipboard, highlight/selection pixels, frame tags, scope isolation, and removal. The existing full document GPU scenarios also pass. |
+
+All 49 control tests pass, with one manual benchmark intentionally ignored.
+Strict all-target control Clippy and both document GPU examples pass. The
+new test window remains off screen. Existing platform deprecation warnings
+are unchanged. I stand behind this fix. It completes deferred text ownership
+and document finalization, not the remaining selection-toolbar, connector,
+full-frame performance, or package-distribution work.
+
+All five direct GPUI deferred/completion tests pass, including cached paint
+reuse without repeated completion callbacks. The 16-test core binding suite
+also passes against this GPUI change. The completion hook adds 20 lines of
+production GPUI code; the rest of that patch is API documentation and tests.

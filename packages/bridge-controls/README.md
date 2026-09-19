@@ -244,6 +244,13 @@ GPUI cached-view replay skips paint callbacks. Keep document content uncached
 until the integration has a tested way to replay its text metadata. The current
 controls do not use cached-view replay.
 
+Native components can use ordinary GPUI deferred drawing inside a document.
+Their `document_text` content remains selectable and searchable in the nearest
+document. Nested documents keep separate registries. Content revisions and
+search counts include all deferred paint before the native draw returns; events
+still reach JavaScript asynchronously. A query does not force another draw.
+
+
 ## Lists
 
 `List` uses GPUI's variable-height `ListState`. Its direct native children are

@@ -84,3 +84,11 @@ shared viewport and optional adapter, at Pierre commit
 The npm pins and default JS path remain unchanged. The owner also reports full
 local and preview WebGPU/WebGL success using the `af4ee6d` WASM artifact. CI is
 rebuilding at `5f5de7b`; those browser results are not yet claimed for that pin.
+
+The Pierre owner subsequently verified the `5f5de7b` WASM SHA256 and passed both
+complete local browser suites on actual WebGPU and WebGL. Native and browser
+artifacts now match the same source pin. Clean CI builds native/WASM and passes
+the four editor suites. A playground assertion differed on the CI display's
+viewport and pixel scale; the owner is fixing test coordinate conversion and
+explicit viewport assertions. No framework resize behavior or consumer Rust
+pin is being changed for that test setup issue.

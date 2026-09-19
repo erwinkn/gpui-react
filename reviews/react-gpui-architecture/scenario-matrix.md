@@ -120,8 +120,11 @@ nested deferred hosts, and frame metadata across later draws. A general GPUI
 element context carries each host's metadata through deferred prepaint and
 paint. It adds no layout box and does not run a second layout engine. Cache
 replay does not repeat measurement callbacks. This validates the metadata
-boundary; menu, connector, and selection-toolbar interaction cases still need
-their complete native component checks.
+boundary. Deferred document text now keeps its selection/search scope and
+finalizes its registry at native draw completion. The offscreen GPU test covers
+floating text outside parent bounds, nested documents, native selection,
+clipboard, and removal. Menu, connector, and selection-toolbar interaction cases
+still need their complete native component checks.
 
 React documents the browser measure/correct-before-paint pattern in [useLayoutEffect](https://react.dev/reference/react/useLayoutEffect). Keeping the hook's React execution order does not give this renderer a fresh synchronous native measurement API.
 

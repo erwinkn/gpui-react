@@ -58,7 +58,10 @@ this is separate from an event already queued before the change. This remains
 an implementation checkpoint. Shutdown checks cover signals, a blocked worker,
 window close, worker failure, event overflow, and native cleanup before the
 window is destroyed. `Document` supplies native selection, clipboard, search,
-and painted text inspection across React and native component text. Its drag
+and painted text inspection across React and native component text. Ordinary
+GPUI deferred text keeps its document scope, including nested floating content.
+The registry and search counts are complete when the native draw returns.
+Its drag
 autoscroll uses the existing native list and container state. Inherited font
 changes invalidate list measurements before layout. Broader consumer cases,
 performance work, and release distribution are in progress. The

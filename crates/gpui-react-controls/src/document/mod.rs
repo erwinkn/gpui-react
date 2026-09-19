@@ -143,11 +143,9 @@ pub fn register_scroll_area(
     cx: &mut App,
     scroll: impl Fn(Pixels, &mut App) -> bool + 'static,
 ) {
-    let owner = cx
-        .try_global::<ActiveDocument>()
-        .and_then(|active| active.0.as_ref())
-        .filter(|(id, _)| *id == window.window_handle().window_id())
-        .map(|(_, owner)| owner.clone());
+    let owner = window
+        .element_context::<ActiveDocument>()
+        .map(|active| active.0.clone());
     if let Some(owner) = owner {
         let bounds = bounds.intersect(&window.content_mask().bounds);
         if bounds.size.height > px(0.) && bounds.size.width > px(0.) {
@@ -181,6 +179,7 @@ pub struct Document {
     paint: u64,
     content_changed: bool,
     query_revision: u64,
+    painted_query_revision: u64,
     content_revision: u64,
     reported_search: Option<(u64, u64, usize)>,
     frame: Option<gpui_react::FrameInfo>,
@@ -209,6 +208,7 @@ impl Document {
             paint: 0,
             content_changed: false,
             query_revision: 0,
+            painted_query_revision: 0,
             content_revision: 0,
             reported_search: None,
             frame: None,
@@ -544,6 +544,7 @@ impl Document {
             .as_ref()
             .map(|search| search.matcher.clone());
         self.painted_index_offset = self.index_offset();
+        self.painted_query_revision = self.query_revision;
     }
     fn finish_paint(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.selection.is_dragging()
@@ -570,8 +571,8 @@ impl Document {
         }
         let report = (
             self.content_revision,
-            self.query_revision,
-            self.index_offset(),
+            self.painted_query_revision,
+            self.painted_index_offset,
         );
         if self.reported_search.as_ref() != Some(&report) {
             self.reported_search = Some(report);
@@ -583,7 +584,7 @@ impl Document {
                 frame: self.frame,
                 content_revision: self.content_revision,
                 count: self.match_count,
-                index_offset: self.index_offset(),
+                index_offset: self.painted_index_offset,
             };
             // Publication follows the complete native paint, not a partial text walk.
             cx.defer_in(window, move |_, _, cx| cx.emit(event));
@@ -719,7 +720,7 @@ impl Document {
 impl Render for Document {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         DocumentScope {
-            owner: cx.weak_entity(),
+            context: Rc::new(ActiveDocument(cx.weak_entity())),
             child: self
                 .props
                 .style
@@ -794,28 +795,9 @@ impl ReactQueries for Document {
         Ok(self.snapshot())
     }
 }
-#[derive(Default)]
-struct ActiveDocument(Option<(WindowId, WeakEntity<Document>)>);
-impl Global for ActiveDocument {}
-fn scoped_document<R>(
-    owner: WeakEntity<Document>,
-    window: &mut Window,
-    cx: &mut App,
-    f: impl FnOnce(&mut Window, &mut App) -> R,
-) -> R {
-    if !cx.has_global::<ActiveDocument>() {
-        cx.set_global(ActiveDocument::default());
-    }
-    let previous = cx
-        .global_mut::<ActiveDocument>()
-        .0
-        .replace((window.window_handle().window_id(), owner));
-    let result = f(window, cx);
-    cx.global_mut::<ActiveDocument>().0 = previous;
-    result
-}
+struct ActiveDocument(WeakEntity<Document>);
 struct DocumentScope {
-    owner: WeakEntity<Document>,
+    context: Rc<ActiveDocument>,
     child: AnyElement,
 }
 impl Element for DocumentScope {
@@ -846,7 +828,7 @@ impl Element for DocumentScope {
         cx: &mut App,
     ) -> Hitbox {
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
-        scoped_document(self.owner.clone(), window, cx, |window, cx| {
+        window.with_element_context(self.context.clone(), |window| {
             self.child.prepaint(window, cx)
         });
         hitbox
@@ -861,20 +843,14 @@ impl Element for DocumentScope {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if !cx.has_global::<ActiveDocument>() {
-            cx.set_global(ActiveDocument::default());
-        }
-        let previous = cx
-            .global_mut::<ActiveDocument>()
+        self.context
             .0
-            .replace((window.window_handle().window_id(), self.owner.clone()));
-        self.owner
             .update(cx, |owner, cx| {
                 owner.drag_capture = Some(hitbox.id);
                 owner.begin_paint(window, cx);
             })
             .ok();
-        let owner = self.owner.clone();
+        let owner = self.context.0.clone();
         let hitbox = hitbox.clone();
         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
             if phase == DispatchPhase::Bubble {
@@ -883,7 +859,7 @@ impl Element for DocumentScope {
                     .ok();
             }
         });
-        let owner = self.owner.clone();
+        let owner = self.context.0.clone();
         window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
             if phase == DispatchPhase::Capture {
                 owner
@@ -891,7 +867,7 @@ impl Element for DocumentScope {
                     .ok();
             }
         });
-        let owner = self.owner.clone();
+        let owner = self.context.0.clone();
         window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
             if phase == DispatchPhase::Capture && event.button == MouseButton::Left {
                 owner
@@ -907,7 +883,7 @@ impl Element for DocumentScope {
                     .ok();
             }
         });
-        let owner = self.owner.clone();
+        let owner = self.context.0.clone();
         window.on_root_key_event(move |event: &KeyDownEvent, phase, window, cx| {
             if phase != DispatchPhase::Bubble
                 || !(event.keystroke.modifiers.platform || event.keystroke.modifiers.control)
@@ -930,11 +906,13 @@ impl Element for DocumentScope {
                 })
                 .ok();
         });
-        self.child.paint(window, cx);
-        self.owner
-            .update(cx, |owner, cx| owner.finish_paint(window, cx))
-            .ok();
-        cx.global_mut::<ActiveDocument>().0 = previous;
+        window.with_element_context(self.context.clone(), |window| self.child.paint(window, cx));
+        let owner = self.context.0.clone();
+        window.on_draw_complete(move |window, cx| {
+            owner
+                .update(cx, |owner, cx| owner.finish_paint(window, cx))
+                .ok();
+        });
     }
 }
 impl IntoElement for DocumentScope {
@@ -1015,10 +993,7 @@ impl Element for DocumentText {
     ) -> Option<Hitbox> {
         self.styled
             .prepaint(id, inspector, bounds, state, window, cx);
-        let in_document = cx
-            .try_global::<ActiveDocument>()
-            .and_then(|active| active.0.as_ref())
-            .is_some_and(|(id, _)| *id == window.window_handle().window_id());
+        let in_document = window.element_context::<ActiveDocument>().is_some();
         in_document.then(|| window.insert_hitbox(bounds, HitboxBehavior::Normal))
     }
     fn paint(
@@ -1031,11 +1006,9 @@ impl Element for DocumentText {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if let Some(owner) = cx
-            .try_global::<ActiveDocument>()
-            .and_then(|active| active.0.as_ref())
-            .filter(|(id, _)| *id == window.window_handle().window_id())
-            .map(|(_, owner)| owner.clone())
+        if let Some(owner) = window
+            .element_context::<ActiveDocument>()
+            .map(|active| active.0.clone())
         {
             owner
                 .update(cx, |owner, _| {
@@ -1176,5 +1149,180 @@ mod tests {
             .unwrap();
         assert_eq!(geometry::byte_offset("a😀b", 3).unwrap(), 5);
         assert!(geometry::byte_offset("a😀b", 2).is_err());
+    }
+
+    struct DeferredText(gpui::SharedString);
+    impl gpui::Render for DeferredText {
+        fn render(
+            &mut self,
+            _: &mut gpui::Window,
+            _: &mut gpui::Context<Self>,
+        ) -> impl gpui::IntoElement {
+            use gpui::prelude::*;
+            gpui::deferred(
+                gpui::div()
+                    .child(super::document_text("deferred", self.0.clone()))
+                    .child(
+                        gpui::deferred(super::document_text("nested", "nested token"))
+                            .with_priority(2),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn deferred_document_text_keeps_selection_search_and_cache(cx: &mut TestAppContext) {
+        use gpui::prelude::*;
+        let window = cx.add_window(|_, cx| Document::new(props("token", 0, 0), cx));
+        let reports = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let report_sink = reports.clone();
+        let document = window.update(cx, |_, _, cx| cx.entity()).unwrap();
+        cx.update(|cx| {
+            cx.subscribe(&document, move |_, event: &super::DocumentEvent, _| {
+                if let super::DocumentEvent::Search {
+                    count,
+                    content_revision,
+                    ..
+                } = event
+                {
+                    report_sink.borrow_mut().push((*count, *content_revision));
+                }
+            })
+            .detach()
+        });
+        window
+            .update(cx, |doc, window, cx| {
+                let normal = cx.new(|_| {
+                    Text::new(TextProps {
+                        text: "normal token".into(),
+                        text_key: Some("normal".into()),
+                        ..Default::default()
+                    })
+                });
+                let deferred = cx.new(|_| DeferredText("deferred token".into()));
+                doc.set_children(vec![normal.into(), deferred.into()], window, cx);
+            })
+            .unwrap();
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+            .unwrap();
+        let (revision, matches) = window
+            .update(cx, |doc, window, cx| {
+                assert_eq!(
+                    doc.entries
+                        .iter()
+                        .map(|entry| entry.key.as_ref())
+                        .collect::<Vec<_>>(),
+                    vec!["normal", "deferred", "nested"]
+                );
+                assert_eq!(doc.match_count, 3);
+                assert_eq!(doc.cache.len(), 3);
+                doc.apply_command(super::DocumentCommand::SelectAll, window, cx)
+                    .unwrap();
+                assert_eq!(
+                    doc.snapshot().selection.as_deref(),
+                    Some("normal token\ndeferred token\nnested token")
+                );
+                (doc.content_revision, doc.cache["deferred"].matches.clone())
+            })
+            .unwrap();
+        assert_eq!(&*reports.borrow(), &[(3, revision)]);
+        for _ in 0..2 {
+            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+                .unwrap();
+            window
+                .update(cx, |doc, _, _| {
+                    assert_eq!(doc.content_revision, revision);
+                    assert!(Arc::ptr_eq(&matches, &doc.cache["deferred"].matches));
+                    assert_eq!(doc.ranges.len(), 3);
+                })
+                .unwrap();
+        }
+        assert_eq!(
+            reports.borrow().len(),
+            1,
+            "stable deferred content must not emit repeated search results"
+        );
+        window
+            .update(cx, |doc, window, cx| {
+                doc.set_children(vec![doc.children[0].clone()], window, cx);
+            })
+            .unwrap();
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+            .unwrap();
+        window
+            .update(cx, |doc, _, _| {
+                assert_eq!(doc.cache.len(), 1);
+                assert_eq!(doc.content_revision, revision + 1);
+                assert_eq!(doc.match_count, 1);
+            })
+            .unwrap();
+        assert_eq!(reports.borrow().last(), Some(&(1, revision + 1)));
+    }
+
+    #[gpui::test]
+    fn document_revision_is_complete_when_draw_returns(cx: &mut TestAppContext) {
+        let handle = cx.add_window(|_, cx| Document::new(props("token", 0, 0), cx));
+        let document = handle.update(cx, |_, _, cx| cx.entity()).unwrap();
+        let text = cx.update(|cx| cx.new(|_| DeferredText("first token".into())));
+        cx.update_window(handle.into(), |_, window, cx| {
+            document.update(cx, |doc, cx| doc.set_children(vec![text.clone().into()], window, cx));
+            let initial = document.read(cx).content_revision;
+            window.draw(cx).clear(cx);
+            assert_eq!(document.read(cx).content_revision, initial + 1, "a completed draw must publish its complete content revision before native callers read it");
+            text.update(cx, |text, cx| {
+                text.0 = "second token".into();
+                cx.notify();
+            });
+            window.draw(cx).clear(cx);
+            let snapshot = document.read(cx).snapshot();
+            assert_eq!(snapshot.content_revision, initial + 2);
+            assert_eq!(snapshot.text[0].text, "second token");
+            assert_eq!(snapshot.match_count, 2);
+        }).unwrap();
+    }
+
+    struct ChangeSearchAfterPaint(gpui::WeakEntity<Document>);
+    impl gpui::Render for ChangeSearchAfterPaint {
+        fn render(
+            &mut self,
+            _: &mut gpui::Window,
+            _: &mut gpui::Context<Self>,
+        ) -> impl gpui::IntoElement {
+            use gpui::prelude::*;
+            let owner = self.0.clone();
+            gpui::div()
+                .child(super::document_text("late", "token"))
+                .on_painted(move |_, window, _| {
+                    let owner = owner.clone();
+                    window.on_draw_complete(move |window, cx| {
+                        owner
+                            .update(cx, |doc, cx| {
+                                if doc.query_revision == 0 {
+                                    doc.set_props(props("different", 0, 9), window, cx);
+                                }
+                            })
+                            .unwrap();
+                    });
+                })
+        }
+    }
+    #[gpui::test]
+    fn completion_uses_the_query_that_was_painted(cx: &mut TestAppContext) {
+        let handle = cx.add_window(|_, cx| Document::new(props("token", 0, 2), cx));
+        let document = handle.update(cx, |_, _, cx| cx.entity()).unwrap();
+        cx.update_window(handle.into(), |_, window, cx| {
+            let child = cx.new(|_| ChangeSearchAfterPaint(document.downgrade()));
+            document.update(cx, |doc, cx| {
+                doc.set_children(vec![child.into()], window, cx)
+            });
+            window.draw(cx).clear(cx);
+            let doc = document.read(cx);
+            assert_eq!(doc.query_revision, 1);
+            assert_eq!(doc.reported_search, Some((doc.content_revision, 0, 2)));
+            assert_eq!(doc.snapshot().query.unwrap().query, "token");
+            assert_eq!(doc.snapshot().match_index_offset, 2);
+            assert_eq!(doc.snapshot().match_count, 1);
+        })
+        .unwrap();
     }
 }

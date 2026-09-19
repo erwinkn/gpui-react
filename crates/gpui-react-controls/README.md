@@ -35,6 +35,7 @@ cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --exam
 cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example container_visual
 cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example list_visual
 cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example document_visual
+cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example deferred_document_visual
 cargo clippy --manifest-path crates/gpui-react-controls/Cargo.toml --release --all-targets -- -D warnings
 ```
 
@@ -90,6 +91,16 @@ whether it moved. `Container` and `VirtualList` already register themselves.
 The native drag clock uses 16 ms ticks and distance-based speed. It allows at
 most half a viewport per completed document paint, preserving overlap between
 virtualized selections. Release and unmount cancel the task.
+
+Ordinary `gpui::deferred` text retains the nearest document scope. Nested
+documents keep separate selection and search registries, including inside
+floating views. GPUI's native `on_draw_complete` callback finalizes content
+revisions, cache pruning, and search counts after all deferred painting, before
+`Window::draw` returns. Search events retain the query and match offset used by
+that paint, even if a native completion callback has already changed props.
+The separate deferred-document GPU example checks text outside its parent's
+layout box, nested scope isolation, double-click selection, clipboard, pixels,
+frame tags, and removal. It saves `/tmp/bridge-deferred-document.png`.
 
 The registry describes paint callbacks. GPUI cached view replay does not call
 these callbacks, so content participating in document services must remain
