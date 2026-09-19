@@ -1,0 +1,17 @@
+[package]
+name = "gpui-react-frame-cost"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+allocation-counts = []
+scene-checks = ["gpui/test-support", "gpui_macos/test-support"]
+
+[dependencies]
+gpui = { workspace = true }
+gpui_macos = { workspace = true }
+gpui-react = { path = "../../crates/gpui-react" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }

@@ -1,0 +1,26 @@
+[package]
+name = "gpui-react-counter-example"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+interaction-tests = ["dep:gpui", "dep:gpui_macos"]
+
+[dependencies]
+gpui = { workspace = true, optional = true, features = ["test-support"] }
+gpui_macos = { workspace = true, optional = true, features = ["test-support"] }
+gpui-react = { path = "../../crates/gpui-react" }
+gpui-react-runtime = { path = "../../crates/gpui-react-runtime" }
+gpui-react-texture-example = { path = "../gpu-component" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+napi = { workspace = true }
+napi-derive = { workspace = true }
+
+[build-dependencies]
+napi-build = { workspace = true }

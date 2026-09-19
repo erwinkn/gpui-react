@@ -5,8 +5,6 @@ edition = "2024"
 license = "Apache-2.0"
 description = "Derive macros for gpui-react props schemas"
 
-[workspace]
-
 [lib]
 proc-macro = true
 

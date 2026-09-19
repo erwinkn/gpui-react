@@ -1,0 +1,19 @@
+[package]
+name = "gpui-react-texture-example"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+gpui-react = { path = "../../crates/gpui-react" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = "0.33"
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+gpui_macos = { workspace = true, features = ["test-support"] }

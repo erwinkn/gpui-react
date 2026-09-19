@@ -3,21 +3,21 @@ name = "gpui-react"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "Small asynchronous React bindings for ordinary GPUI views"
-
-[workspace]
+description = "Small asynchronous React bindings for ordinary GPUI views, with the built-in controls"
 
 [dependencies]
-gpui = { path = "../../zed/crates/gpui", default-features = false, features = ["font-kit"] }
+gpui = { workspace = true }
 gpui-react-macros = { path = "../gpui-react-macros" }
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["raw_value"] }
-anyhow = "1"
-rustc-hash = "2"
-csscolorparser = "0.8.3"
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
+anyhow = { workspace = true }
+rustc-hash = { workspace = true }
+csscolorparser = { workspace = true }
+unicode-segmentation = "1"
+web-time = "1"
+regex = "1"
+smallvec = "1"
 
 [dev-dependencies]
-gpui = { path = "../../zed/crates/gpui", default-features = false, features = ["font-kit", "test-support"] }
-
-[profile.release]
-debug = 1
+gpui = { workspace = true, features = ["test-support"] }
+gpui_macos = { workspace = true, features = ["test-support"] }

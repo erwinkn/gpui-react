@@ -3,21 +3,24 @@ name = "gpui-react-runtime"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "Default native composition for the asynchronous GPUI React bridge"
-
-[workspace]
+description = "Native application loop, N-API transport, and default composition for the asynchronous GPUI React bridge"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-gpui-react-host = { path = "../gpui-react-host" }
-gpui-react-controls = { path = "../gpui-react-controls" }
-napi = { version = "3", features = ["napi8"] }
-napi-derive = "3"
+gpui-react = { path = "../gpui-react" }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = "0.3"
+napi = { workspace = true }
+napi-derive = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+gpui_macos = { workspace = true }
+objc = "0.2"
+signal-hook = "0.3"
 
 [build-dependencies]
-napi-build = "2"
-
-[profile.release]
-debug = 1
+napi-build = { workspace = true }
