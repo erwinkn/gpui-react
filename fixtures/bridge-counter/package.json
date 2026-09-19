@@ -6,7 +6,8 @@
   "dependencies": {
     "@gpuix/bridge": "workspace:*",
     "react": "19.2.4",
-    "@gpuix/bridge-controls": "workspace:*"
+    "@gpuix/bridge-controls": "workspace:*",
+    "@gpuix/bridge-gpu-example": "workspace:*"
   },
   "scripts": {
     "test": "bun test.ts",

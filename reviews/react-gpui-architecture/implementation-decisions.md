@@ -324,3 +324,55 @@ component compositions, native geometry-dependent controls, broader frame and
 memory comparisons, the old-pixels/new-subscription race, installed/released
 packages, and the final scenario audit. Cherry will receive one completion
 handoff after that work, not an early integration claim.
+
+## External GPU component checkpoint
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Keep the example producer and React wrapper in a separate fixture crate and private JS package. | Add an effect-specific control or shader payload to core. | High | The example only produces a solid color on Metal. It proves the extension path and composition rules, not a complete effect library or browser driver. Cherry shaders remain outside the framework. |
+| Use an ordinary GPUI `Render` view and delegate the bridge traits to normal native methods. | Reintroduce the old custom-element factory and renderer context. | High | Component authors must still use the same compiled GPUI build as the composition. Cargo metadata confirms one GPUI package and no `gpuix-native` dependency for this fixture. |
+| Submit GPU clear commands on the window's shared queue and use private RGBA16Float textures. | Upload CPU pixels, wait for every producer command, or clamp RGB to alpha. | High | The format preserves HDR contributions above alpha. The tested red value 2 with alpha 0.25 and parent opacity 0.25 yields `[128, 0, 239, 255]` over blue. The producer performs no readback or CPU wait. |
+| Allocate a new texture when size or color changes; reuse it for label-only updates. | Overwrite a resource that an earlier scene can still reference, or implement a frame-retirement pool in this fixture. | Medium | Large animated outputs may need pooling. This example does not claim an optimal allocation policy for video. Shared scene handles preserve prior resources until release, and removal clears native ownership. |
+| Retain actual GPUI surface records in the lifetime test. | Assume the previous frame is still internally retained after every forced draw. | High | The first test failed because the test draw loop had already retired that frame. The corrected test keeps the recorded scene references explicitly, requires the old handle to survive resize/removal, then drops those references and verifies release. It does not require GPUI to keep already retired frames. |
+| Make `initialColor` construction-only and expose native transition/cancel commands. | Echo the changing color through React on every frame. | High | Callers use a command to replace live color. Unrelated props and resize preserve native state. The source and relocated worker tests cover this contract. |
+| Use GPUI's native clock and frame requests, with both component and application reduced-motion settings. | Use a JS timer or only the component prop. | High | The first test for GPUI's setting failed during an active transition. The example now finishes that transition on the next native draw and stops frame requests. The test changes only GPUI application state, not OS preferences. |
+| Stop motion and report a distinct native error when texture production or composition fails. | Panic during paint or emit the same error on every frame. | Medium | The example does not implement GPU device recovery. It reports repeated identical errors once and preserves the last painted snapshot as older evidence. |
+| Extend the existing native interaction driver to inspect this producer while React is blocked. | Infer independence from an elapsed-time query after the worker resumes. | High | The driver requires new texture generations and changed GPU pixels during the shared-flag stall. Readback can force extra native draws; generation counts and CPU draw counts are not display FPS. |
+| Seed the new fixture lockfile from the tested controls dependency graph. | Keep a fresh resolution that upgraded many unrelated dependencies. | High | The first fixture build resolved newer dependencies. The final tests use the existing versions plus the new fixture packages. This avoids an unrelated dependency upgrade in the checkpoint. |
+
+The color validation test, strict component and composition Clippy checks, and
+strict TypeScript fixture check pass. The offscreen GPU example passes HDR,
+opacity, clipping, corners, multiple-texture, text, click, resize, resource,
+transition, retarget, cancellation, reduced-motion, and idle-frame assertions.
+The initial GPU image was inspected.
+
+The full source and relocated compiled worker suites pass. During the relocated
+blocked-worker check, the texture pixel changed from `[25, 51, 102, 255]` to
+`[46, 51, 82, 255]` and its resource generation advanced by 29. Existing input,
+IME, scroll, hover, caret, motion, document, list, repeated-session, failure,
+and shutdown checks still pass. These values prove native progress in that run;
+they are not a presentation or throughput benchmark. No GPUI patch was needed.
+
+I stand behind this checkpoint under its stated scope. The overall goal remains
+active. The next consumer work is the shared Pierre viewport and optional
+adapters, followed by the remaining geometry, event race, performance, package,
+and completion-audit requirements. No Cherry completion message has been sent.
+
+### Pierre ownership and compatibility agreement
+
+Pierre thread `thr_ijspk7r9pv` authorized edits to its sibling `pierre-native`
+checkout under `crates/pierre-view`, a new optional Rust binding crate,
+`crates/pierre-runtime`, and root Cargo manifests/locks. The repository currently
+has unrelated untracked source. Do not stage or commit that source. Return a
+scoped changed-file list or patch. Pierre owns its TypeScript, website, test
+scripts, and deployment files.
+
+The owner requires one shared viewport implementation, preservation of native
+document/input/diff/paint behavior and payloads, and an optional legacy adapter
+for the current WebGPU/WebGL playground. The owner approved a Rust-only update
+that pins legacy `gpuix-native` and the new binding to one full published
+framework commit. Verify one GPUI crate in the resolved graph. Leave npm/release
+pins and default JS entry points unchanged. Validate legacy native and WASM
+composition builds plus the new native adapter before the handoff. Pierre will
+then run the complete playground interaction suites. The new bridge itself
+still has only macOS/Bun bootstrap support. No Pierre files have changed yet.

@@ -55,6 +55,13 @@ opacity, clip masks, corner radii, resize, and later scene content. The producer
 uses a GPU clear command on the shared queue. Only the screenshot assertion
 waits for readback.
 
+The [new asynchronous bridge example](../fixtures/bridge-gpu-component/README.md)
+wraps an ordinary GPUI view. It adds typed commands, events, and queries without
+an old-renderer dependency. Its native tests cover resource lifetime, transitions,
+cancellation, and reduced motion. The source and relocated application tests also
+check texture production and GPU pixels while React is blocked. This new host
+currently has macOS/Bun evidence only.
+
 The [framework composition fixture](../fixtures/native-composition/README.md)
 tests the public extension and loader APIs. Its pixel checks cover opacity, HDR,
 clipping, corners, multiple textures, resize, and removal. It also checks clicks,

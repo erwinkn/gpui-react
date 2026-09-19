@@ -70,11 +70,23 @@
       "dependencies": {
         "@gpuix/bridge": "workspace:*",
         "@gpuix/bridge-controls": "workspace:*",
+        "@gpuix/bridge-gpu-example": "workspace:*",
         "react": "19.2.4",
       },
       "devDependencies": {
         "@types/react": "^19.2.0",
         "typescript": "^5.3.0",
+      },
+    },
+    "fixtures/bridge-gpu-component": {
+      "name": "@gpuix/bridge-gpu-example",
+      "version": "0.1.0",
+      "dependencies": {
+        "@gpuix/bridge": "workspace:*",
+        "@gpuix/bridge-controls": "workspace:*",
+      },
+      "peerDependencies": {
+        "react": "^19.2.0",
       },
     },
     "fixtures/native-composition": {
@@ -237,6 +249,8 @@
     "@gpuix/bridge-controls": ["@gpuix/bridge-controls@workspace:packages/bridge-controls"],
 
     "@gpuix/bridge-counter-example": ["@gpuix/bridge-counter-example@workspace:fixtures/bridge-counter"],
+
+    "@gpuix/bridge-gpu-example": ["@gpuix/bridge-gpu-example@workspace:fixtures/bridge-gpu-component"],
 
     "@gpuix/cli": ["@gpuix/cli@workspace:cli"],
 

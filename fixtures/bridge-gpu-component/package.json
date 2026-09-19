@@ -1,0 +1,16 @@
+{
+  "name": "@gpuix/bridge-gpu-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./react.ts"
+  },
+  "dependencies": {
+    "@gpuix/bridge": "workspace:*",
+    "@gpuix/bridge-controls": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
+  }
+}

@@ -131,6 +131,7 @@ impl ReactQueries for Counter {
 fn register() {
     register_components(|registry| {
         gpui_react_controls::register(registry)?;
+        gpui_react_texture_example::register(registry)?;
         #[cfg(feature = "interaction-tests")]
         interaction::register(registry)?;
         #[cfg(feature = "interaction-tests")]

@@ -16,6 +16,7 @@ interaction-tests = ["dep:gpui", "dep:gpui_macos"]
 gpui = { path = "../../zed/crates/gpui", default-features = false, features = ["font-kit", "test-support"], optional = true }
 gpui_macos = { path = "../../zed/crates/gpui_macos", default-features = false, features = ["font-kit", "test-support"], optional = true }
 gpui-react-controls = { path = "../../crates/gpui-react-controls" }
+gpui-react-texture-example = { path = "../bridge-gpu-component" }
 gpui-react-host = { path = "../../crates/gpui-react-host" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

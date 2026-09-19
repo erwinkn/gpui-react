@@ -1,7 +1,7 @@
-# Ordinary GPUI counter with a React wrapper
+# Native component composition with React bindings
 
 This composition links the new bridge host, an ordinary GPUI counter, and the
-new native controls.
+new native controls, plus an [external GPU view](../bridge-gpu-component/README.md).
 Its `Render` implementation remains native. The small `ReactView` implementation
 maps props; optional traits expose typed events, commands and queries. No old
 GPUiX renderer or worker-side tree is linked.
@@ -32,6 +32,8 @@ The test keeps windows in the background and closes its own processes. It checks
   layout-effect anchor, an atomic row-window change, and keyed child identity.
 - Interpolated document text as one native value, search, versioned UTF-16
   selection, and native selection events.
+- A separate GPU component crate, float texture creation, shared document text,
+  native transition/cancellation, and state-preserving prop updates.
 - A compiled Bun executable with all worker entries, moved outside its build directory.
 
 The final state reports a native render count, but occluded windows need not draw
@@ -50,7 +52,8 @@ cp /tmp/gpuix-framework-target/release/libgpui_react_counter_example.dylib fixtu
 GPUIX_BACKGROUND=1 BRIDGE_INTERACTION_TESTS=1 bun fixtures/bridge-counter/test.ts
 ```
 
-React mounts the ordinary `Input`, `List`, and `Text` wrappers. A fixture-only
+React mounts the ordinary `Input`, `List`, and `Text` wrappers plus the external
+`Texture` component. A fixture-only
 native driver then waits for a shared test flag. The worker sets that flag and
 runs a synchronous loop until the native script finishes. No JavaScript timer,
 React work, or event callback can run in that interval.
@@ -58,7 +61,9 @@ React work, or event callback can run in that interval.
 The native script sends keystrokes and wheel events through GPUI and uses the
 platform input handler for IME. It checks selection deletion, undo, committed
 composition, subsequent typing, native list scroll, hover pixels, caret pixels,
-the caret timer's notification, and animated pixels. Each operation checks that
+the caret timer's notification, and animated pixels. The external texture producer
+must create new resources and change its GPU pixels during the same stall. Each
+operation checks that
 the worker is still blocked. Native draw numbers advance without another React
 commit. After the worker resumes, ordered edit events reach their original
 callback even when React has replaced it before draining the queue. A command

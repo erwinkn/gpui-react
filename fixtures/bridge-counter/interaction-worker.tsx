@@ -4,6 +4,8 @@ import { attachApplication } from "@gpuix/bridge/application"
 import { nativeComponent, type NativeRef } from "@gpuix/bridge"
 import { Input, List, Text, type InputEvent, type InputRef, type ListEvent } from "@gpuix/bridge-controls"
 
+import { Texture } from "@gpuix/bridge-gpu-example"
+
 const bindings = require("./counter.node")
 const root = attachApplication(bindings)
 const Driver = nativeComponent<{}, never, null, null, Record<string, unknown>>("interaction-driver")
@@ -22,6 +24,7 @@ function App({ generation }: { generation: number }) {
     <List estimatedItemHeight={20} style={{ height: 100, width: "100%", shrink: 0 }} onEvent={onScroll}>
       {Array.from({ length: 100 }, (_, i) => <Text key={i} text={`row ${i}`} style={{ height: 20, color: "#ffffff" }} />)}
     </List>
+    <Texture initialColor={[0.1, 0.2, 0.4, 1]} style={{ width: 64, height: 10, shrink: 0 }} />
   </Driver>
 }
 root.renderSync(<App generation={0} />)

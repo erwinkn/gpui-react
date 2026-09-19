@@ -3,6 +3,7 @@ use anyhow::{Result, ensure};
 use gpui::{prelude::*, *};
 use gpui_react_controls::{Input, VirtualList};
 use gpui_react_host::gpui_react::*;
+use gpui_react_texture_example::{TextureCommand, TextureView};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -128,10 +129,18 @@ impl ReactCommands for Driver {
             .downcast::<VirtualList>()
             .ok()
             .unwrap();
+        let texture = self
+            .children
+            .get(2)
+            .unwrap()
+            .clone()
+            .downcast::<TextureView>()
+            .ok()
+            .unwrap();
         let animation = self.animation.clone();
         let bounds = self.hover_bounds.clone();
         self.task = Some(cx.spawn_in(window, async move |driver, cx| {
-            let report = run(input, list, animation, bounds, cx).await;
+            let report = run(input, list, texture, animation, bounds, cx).await;
             let report = match report {
                 Ok(value) => value,
                 Err(error) => json!({"error":format!("{error:#}")}),
@@ -180,9 +189,24 @@ fn pixels(cx: &mut AsyncWindowContext, color: &str) -> Result<usize> {
         })
         .count())
 }
+fn texture_pixel(
+    cx: &mut AsyncWindowContext,
+    bounds: &gpui_react_controls::geometry::Rect,
+) -> Result<[u8; 4]> {
+    stalled()?;
+    let scale = cx.update(|window, _| window.scale_factor())?;
+    let image = cx.update(|window, _| window.render_to_image())??;
+    Ok(image
+        .get_pixel(
+            ((bounds.x + bounds.width / 2.) * scale) as u32,
+            ((bounds.y + bounds.height / 2.) * scale) as u32,
+        )
+        .0)
+}
 async fn run(
     input: Entity<Input>,
     list: Entity<VirtualList>,
+    texture: Entity<TextureView>,
     animation: Rc<Cell<f32>>,
     hover: Rc<Cell<Option<Bounds<Pixels>>>>,
     cx: &mut AsyncWindowContext,
@@ -198,8 +222,24 @@ async fn run(
             .await;
     }
     let started = Instant::now();
+    texture.update(cx, |texture, cx| {
+        texture.apply_command(
+            TextureCommand::Transition {
+                to: [0.4, 0.2, 0.1, 1.],
+                duration_ms: 2000,
+            },
+            cx,
+        )
+    });
     cx.update(|window, _| window.set_logical_active_for_tests(true))?;
     draw(cx)?;
+    let texture_before = texture
+        .read_with(cx, |texture, cx| {
+            texture.snapshot(cx.background_executor().now())
+        })
+        .painted
+        .unwrap();
+    let texture_pixel_before = texture_pixel(cx, &texture_before.bounds)?;
     let initial = input.read_with(cx, |input, _| input.current_snapshot());
     let commit = initial.painted.as_ref().unwrap().frame.unwrap().commit;
     for key in ["a", "b", "left", "shift-left", "backspace"] {
@@ -326,6 +366,22 @@ async fn run(
         animation_pixels_after > animation_pixels_before + 20,
         "native animation did not change GPU pixels"
     );
+    let texture_after = texture
+        .read_with(cx, |texture, cx| {
+            texture.snapshot(cx.background_executor().now())
+        })
+        .painted
+        .unwrap();
+    let texture_pixel_after = texture_pixel(cx, &texture_after.bounds)?;
+    ensure!(
+        texture_after.generation > texture_before.generation,
+        "texture producer did not run during the worker stall"
+    );
+    ensure!(
+        texture_pixel_after[0] > texture_pixel_before[0] + 5
+            && texture_pixel_after[2] + 5 < texture_pixel_before[2],
+        "texture animation did not reach GPU pixels"
+    );
     let end = input.read_with(cx, |input, _| input.current_snapshot());
     let frame = end.painted.unwrap().frame.unwrap();
     ensure!(
@@ -334,6 +390,6 @@ async fn run(
     );
     stalled()?;
     Ok(
-        json!({"value":end.value,"revision":end.revision,"commit":commit,"nativeFrames":frame.frame-first_frame,"elapsedMs":started.elapsed().as_millis(),"scrollIndex":after_scroll.anchor.index,"caretOnPixels":caret_on,"caretOffPixels":caret_off,"hoverPixels":hovered,"animationBefore":animation_before,"animationAfter":animation.get(),"animationPixelsBefore":animation_pixels_before,"animationPixelsAfter":animation_pixels_after,"caretNotifications":notifications.get()}),
+        json!({"value":end.value,"revision":end.revision,"commit":commit,"nativeFrames":frame.frame-first_frame,"elapsedMs":started.elapsed().as_millis(),"scrollIndex":after_scroll.anchor.index,"caretOnPixels":caret_on,"caretOffPixels":caret_off,"hoverPixels":hovered,"animationBefore":animation_before,"animationAfter":animation.get(),"animationPixelsBefore":animation_pixels_before,"animationPixelsAfter":animation_pixels_after,"caretNotifications":notifications.get(),"textureBefore":texture_pixel_before,"textureAfter":texture_pixel_after,"textureGenerations":texture_after.generation-texture_before.generation}),
     )
 }

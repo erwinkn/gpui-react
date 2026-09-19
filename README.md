@@ -53,7 +53,10 @@ window is destroyed. `Document` supplies native selection, clipboard, search,
 and painted text inspection across React and native component text. Its drag
 autoscroll uses the existing native list and container state. Inherited font
 changes invalidate list measurements before layout. Broader consumer cases,
-performance work, and release distribution are in progress. The existing API
+performance work, and release distribution are in progress. The
+[external GPU component](./fixtures/bridge-gpu-component/README.md) uses the
+window's shared Metal queue and float textures. Its tests cover pixels, resource
+lifetime, native motion, and source/relocated workers. The existing API
 below remains usable. See the
 [accepted architecture and scenarios](./reviews/react-gpui-architecture/scenario-matrix.md).
 
