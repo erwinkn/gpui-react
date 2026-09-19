@@ -1,8 +1,11 @@
 # React wrappers for native GPUI controls
 
-`@gpuix/bridge-controls` supplies typed React wrappers. The application composition
-must register the matching [`gpui-react-controls`](../../crates/gpui-react-controls)
-Rust crate. React and `@gpuix/bridge` are peer dependencies.
+`@gpuix/bridge-controls` supplies typed React wrappers. The default
+`@gpuix/bridge-runtime` package registers all controls below. A custom application
+composition must register the matching
+[`gpui-react-controls`](https://github.com/erwinkn/gpuix/tree/bridge/minimal-react-gpui/crates/gpui-react-controls)
+Rust crate. React and `@gpuix/bridge` are peer dependencies. Install matching
+versions of the bridge packages.
 
 ```tsx
 import { createRef } from "react"

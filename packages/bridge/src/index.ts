@@ -6,7 +6,7 @@ export type { FrameInfo, NativeEvent, NativeRef, Operation, Transaction, Transac
 
 export function nativeComponent<Props extends object, Event = never, Command = unknown, Query = unknown, Reply = unknown>(name: string) {
   if (!/^[a-z0-9-]+$/.test(name)) throw Error("Invalid native component name")
-  return function NativeComponent(props: Props & { children?: ReactNode; onEvent?: (event: Event) => void; ref?: Ref<NativeRef<Command, Query, Reply>> }) {
+  return function NativeComponent(props: Props & { children?: ReactNode; onEvent?: (event: Event) => void; ref?: Ref<NativeRef<Command, Query, Reply>> }): React.ReactElement {
     return createElement(name, props)
   }
 }

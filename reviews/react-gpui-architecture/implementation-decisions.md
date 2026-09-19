@@ -593,3 +593,26 @@ the modal checks actual underlay mouse delivery, not only a guarded click
 counter. I stand behind these composition tests. They complete the planned
 native geometry examples. Full-frame performance comparisons, package
 distribution, and the final requirement audit remain open.
+
+### Default runtime and installed packages
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Add a small default composition crate and `@gpuix/bridge-runtime` package that register only the five standard controls. | Require every application to build a composition before it can use standard controls. | High | Custom native views still require a replacement composition. Loading both would duplicate native statics; the documentation requires one composition in both launcher and worker. |
+| Ship the tested macOS arm64 binary with literal CommonJS loading and an ESM wrapper. | Add platform packages or a dynamic binary resolver before other targets have a tested host. | High | The loader rejects unsupported targets. Node checks cover loading only; application startup is tested with Bun. Browser use fails explicitly and retains the existing adapter path. |
+| Pack exact matching prerelease peers into private GitHub release archives. | Publish to the existing npm namespace or permit a range of untested package combinations. | High | All three packages must be installed together. The packer never publishes, requires clean source by default, and records source, GPUI, and binary/archive hashes. Local dirty builds are marked and cannot pass the published-artifact test. |
+| Declare native wrappers as returning `ReactElement`. | Keep TypeScript's inferred DOM element return type or ask users to disable declaration checking. | High | The isolated strict typecheck failed because native `Style.direction` is not CSS `direction`. The explicit return type removes the accidental DOM constraint without changing prop, event, ref, or runtime semantics. The original failure is retained in the test evidence. |
+| Test a temporary installation with strict ESM/CommonJS declarations and a real hidden application, then delete source and dependencies before running its moved executable. | Test only workspace imports or move an executable while leaving its original native binary available. | High | Workspace resolution and undeclared files can hide packaging errors. The fixture checks all standard registrations, frame metadata, layout-effect anchoring, selection/search, input revisions/events, and unmount. Native input injection and pixel tests remain in the existing interaction suites; the default runtime gets no test driver. |
+| Verify the npm lockfile's installed archive integrity against local artifacts, including when installing release URLs. | Verify only the downloaded native binary or the package version. | High | Matching versions alone do not prove that published JavaScript matches the tested archive. Both archive integrity and native SHA256 must match. |
+
+The strict installed-package check failed before the declaration fix and passes
+after it. All 14 bridge tests, the release runtime build, strict runtime Clippy,
+and formatting checks pass. Cargo resolves one GPUI crate and no `gpuix-native`
+dependency. The native library links only system libraries and frameworks.
+The test checks Node/Bun loader identity, unsupported-platform/browser errors,
+installed source startup, and the relocated executable with its build inputs
+removed. Test windows stay hidden.
+
+I stand behind this package checkpoint. It does not establish full-frame or
+memory performance, publish a release, migrate Cherry, or add a new browser
+driver. Those limits remain explicit. No Pierre work was requested or resumed.

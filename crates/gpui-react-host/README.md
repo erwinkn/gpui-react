@@ -25,6 +25,11 @@ JavaScript helpers in `@gpuix/bridge/application` for normal application entry.
 They require an explicit composition object in both host and worker. No default
 GPUiX binary is loaded.
 
+The default [`gpui-react-runtime`](../gpui-react-runtime/README.md) composition
+registers the standard controls and is packaged as `@gpuix/bridge-runtime`.
+Applications can pass that package to both JS helpers. Custom native views
+still require an application composition in its place.
+
 The native input queue allows 256 transactions and 4 MiB. Output allows 4096
 messages and 4 MiB. Overflow is explicit. The UI processes up to 32 transactions
 or four milliseconds before yielding; one atomic transaction can exceed that

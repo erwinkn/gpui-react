@@ -68,7 +68,37 @@ GPUI deferred text keeps its document scope, including nested floating content.
 The registry and search counts are complete when the native draw returns.
 Its drag autoscroll uses the existing native list and container state. Inherited font
 changes invalidate list measurements before layout. Broader consumer cases,
-performance work, and release distribution are in progress. The
+performance work, and release publication are in progress.
+
+[`@gpuix/bridge-runtime`](./packages/bridge-runtime/README.md) provides a default
+macOS arm64 composition with these five standard controls. Pass its default
+export to both `runApplication` and `attachApplication`. The package also
+supports named ESM exports and CommonJS `require`. Applications with custom
+native views use their own composition instead. The default package contains
+no consumer or test components. Its browser export reports that the new bridge
+has no browser driver; the existing browser integration remains separate.
+Install matching versions of `@gpuix/bridge`, `@gpuix/bridge-controls`, and
+`@gpuix/bridge-runtime` with React 19.2. The native wrapper declarations support
+strict library checks without DOM style constraints.
+
+The [installed-package check](./fixtures/bridge-package/README.md) verifies
+archive hashes, Node/Bun loaders, ESM/CommonJS types, a hidden application,
+and a compiled executable after its source and dependencies have been removed.
+Build local prerelease archives and test them with:
+
+```sh
+bun scripts/package-bridge.ts 0.1.0-bridge.1 /tmp/bridge-archives
+bun scripts/test-bridge-packages.ts /tmp/bridge-archives
+```
+
+The packer requires clean source, builds the release native library and JS
+packages, and records framework/GPUI refs and SHA256 hashes in
+`bridge-manifest.json`. It does not publish. `--allow-dirty` permits local
+development checks; `--published` on the test command installs the manifest's
+release URLs and requires clean provenance. Only macOS arm64/Bun application
+startup is validated. Node checks cover loading, not the application loop.
+
+The
 [external GPU component](./fixtures/bridge-gpu-component/README.md) uses the
 window's shared Metal queue and float textures. Its tests cover pixels, resource
 lifetime, native motion, and source/relocated workers. The

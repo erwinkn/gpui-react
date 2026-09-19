@@ -144,6 +144,16 @@
         "react": "^19.2.0",
       },
     },
+    "packages/bridge-runtime": {
+      "name": "@gpuix/bridge-runtime",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@gpuix/bridge": "workspace:*",
+      },
+      "peerDependencies": {
+        "@gpuix/bridge": "^0.1.0",
+      },
+    },
     "packages/native": {
       "name": "@gpuix/native",
       "version": "0.9.0",
@@ -266,6 +276,8 @@
     "@gpuix/bridge-gpu-example": ["@gpuix/bridge-gpu-example@workspace:fixtures/bridge-gpu-component"],
 
     "@gpuix/bridge-pierre-example": ["@gpuix/bridge-pierre-example@workspace:fixtures/bridge-pierre"],
+
+    "@gpuix/bridge-runtime": ["@gpuix/bridge-runtime@workspace:packages/bridge-runtime"],
 
     "@gpuix/cli": ["@gpuix/cli@workspace:cli"],
 

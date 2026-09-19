@@ -2,8 +2,9 @@
 
 This is the new React integration, developed alongside the existing GPUiX
 packages. It includes an explicit macOS/Bun native host connection and can wrap
-ordinary GPUI views from a compiled composition. The complete native component
-library and release distribution remain in progress.
+ordinary GPUI views from a compiled composition. Standard controls and the
+default `@gpuix/bridge-runtime` package are available in this repository.
+Release publication and broader performance checks remain in progress.
 
 ```tsx
 import { createRoot, nativeComponent } from '@gpuix/bridge'
@@ -22,6 +23,8 @@ React wrapper. Props must be JSON data. `children`, `ref`, and `onEvent` have
 bridge semantics. A ref has a stable `id`, asynchronous `command(value)`, and
 asynchronous `query(value)`. It has no synchronous native state getter. Commands
 and query types can be supplied through the additional generic parameters.
+The wrapper returns `ReactElement`; its native props do not inherit DOM
+attribute or CSS type constraints.
 
 `createRoot(transport, options?)` binds a session to one root. `render` schedules
 React work. `renderSync` flushes React only; it does not wait for native work.
@@ -76,11 +79,16 @@ bun run --cwd packages/bridge test
 The tests cover commit/effect grouping, asynchronous refs, abandoned Suspense
 work, keyed movement, text removal, callback versions, session reuse, queue
 failure, invalid values, and missing native replies. Full native component,
-platform, and installed-package validation remains required before release.
+platform, and installed-package checks are documented in the repository README.
 
 ## Native application entries
 
 Select one compiled composition explicitly in both entry files:
+
+For the standard controls, use `import bindings from '@gpuix/bridge-runtime'`
+in both files. Install matching versions of the three bridge packages. A custom
+composition uses the literal native path shown below instead. The default
+runtime has no browser driver. It supports macOS arm64 with Bun.
 
 ```ts
 // host.ts
