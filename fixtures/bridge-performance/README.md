@@ -1,13 +1,22 @@
 # Native frame and heap comparison
 
-This fixture compares two native paths in one binary and one GPUI build:
+This fixture compares three native paths in one binary and one GPUI build:
 
 - `raw`: one handwritten GPUI view, strings, a scroll handle, and `ListState`.
   It has no document selection, inspection records, or per-row view entities.
   Treat it as a lower bound, not a feature-equivalent application.
 - `bridge`: the standard `Document`, `Text`, `Container`, and `VirtualList`
   controls, created and updated through the production `Host` transaction
-  decoder and applier.
+  decoder and applier, from the JSON wire.
+- `binary`: the same controls from the binary wire, decoded positionally
+  against the component schema.
+
+With `FRAME_BENCH_WIRE_DIR` set, both bridge modes mount the transaction the
+JavaScript bridge sealed for the scene (`fixtures/bridge-counter/js-wire-dump.tsx`
+writes `mount-<scene>-<rows>.json` and `.bin`); the measuring script does this.
+Without it, `bridge` builds an equivalent JSON transaction in Rust and `binary`
+is unavailable. `gpui-react-frame-cost schema` prints the controls' kind table
+for worker-side tools.
 
 Both scenes have an 800 by 600 logical-pixel viewport, a 32-pixel status line,
 and identical 20-pixel rows. `flow` retains and lays out all row views inside
@@ -57,7 +66,7 @@ CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
 ```
 
 The script builds all three variants, then runs each mode in a separate process.
-It first checks that both modes produce the same nonempty scene image. These
+It first checks that all modes produce the same nonempty scene image. These
 image-check runs are separate from the timing and allocation samples.
 It uses 100, 1,000, and 5,000 supplied rows, three repeats, and rotates mode order.
 It writes raw JSON and machine/source metadata. Run without other builds or

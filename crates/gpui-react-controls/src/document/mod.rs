@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use rustc_hash::FxHashMap;
 use std::{fmt, ops::Range, rc::Rc, sync::Arc, time::Duration};
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, gpui_react::ComponentProps)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct DocumentProps {
     pub style: SharedStyle,
@@ -144,19 +144,36 @@ impl From<u32> for TextKey {
     }
 }
 
+/// Per-text options, 8 bytes: two flags and an optional match index offset
+/// (`NO_OFFSET` when absent).
 #[derive(Clone, Copy, PartialEq)]
 struct TextOptions {
-    selectable: bool,
-    searchable: bool,
-    match_index_offset: Option<usize>,
+    match_index_offset: u32,
+    flags: u8,
 }
+const SELECTABLE: u8 = 1;
+const SEARCHABLE: u8 = 2;
+const NO_OFFSET: u32 = u32::MAX;
 impl Default for TextOptions {
     fn default() -> Self {
         Self {
-            selectable: true,
-            searchable: true,
-            match_index_offset: None,
+            match_index_offset: NO_OFFSET,
+            flags: SELECTABLE | SEARCHABLE,
         }
+    }
+}
+impl TextOptions {
+    fn selectable(&self) -> bool {
+        self.flags & SELECTABLE != 0
+    }
+    fn searchable(&self) -> bool {
+        self.flags & SEARCHABLE != 0
+    }
+    fn match_index_offset(&self) -> Option<usize> {
+        (self.match_index_offset != NO_OFFSET).then_some(self.match_index_offset as usize)
+    }
+    fn set(&mut self, flag: u8, on: bool) {
+        self.flags = if on { self.flags | flag } else { self.flags & !flag };
     }
 }
 struct Entry {
@@ -167,13 +184,15 @@ struct Entry {
     clip: Bounds<Pixels>,
     options: TextOptions,
 }
+/// One record per painted text, kept across paints: 64 bytes. `matches` is
+/// `None` when the text has no search hits, so most texts allocate nothing.
 struct Cached {
     text: SharedString,
     matcher: Option<Arc<search::Matcher>>,
+    matches: Option<Arc<[Range<usize>]>>,
     options: TextOptions,
-    matches: Arc<[Range<usize>]>,
-    seen: u64,
-    index: usize,
+    seen: u32,
+    index: u32,
 }
 type ScrollCallback = Rc<dyn Fn(Pixels, &mut App) -> bool>;
 struct ScrollArea {
@@ -225,7 +244,7 @@ pub struct Document {
     painted_selection_revision: u64,
     entries: Vec<Entry>,
     cache: FxHashMap<TextKey, Cached>,
-    paint: u64,
+    paint: u32,
     content_changed: bool,
     query_revision: u64,
     painted_query_revision: u64,
@@ -294,7 +313,7 @@ impl Document {
     fn registered(&self) -> Vec<RegisteredText> {
         self.entries
             .iter()
-            .filter(|entry| entry.options.selectable)
+            .filter(|entry| entry.options.selectable())
             .map(|entry| RegisteredText {
                 key: entry.key.clone(),
                 text: entry.text.clone(),
@@ -307,7 +326,7 @@ impl Document {
         let mut selectable_index = 0;
         for entry in &self.entries {
             let bounds = entry.geometry.bounds.intersect(&entry.clip);
-            if !entry.options.selectable {
+            if !entry.options.selectable() {
                 if start && bounds.contains(&position) {
                     contained = None;
                     nearest = None;
@@ -341,7 +360,7 @@ impl Document {
         let entry = self
             .entries
             .iter()
-            .filter(|entry| entry.options.selectable)
+            .filter(|entry| entry.options.selectable())
             .nth(index)?;
         Some((index, entry.geometry.index_for_position(position)))
     }
@@ -361,7 +380,7 @@ impl Document {
         let entry = self
             .entries
             .iter()
-            .filter(|entry| entry.options.selectable)
+            .filter(|entry| entry.options.selectable())
             .nth(index)
             .unwrap();
         let changed = if event.click_count >= 2 {
@@ -415,7 +434,7 @@ impl Document {
             let entries = self
                 .entries
                 .iter()
-                .filter(|entry| entry.options.selectable)
+                .filter(|entry| entry.options.selectable())
                 .map(|entry| RegisteredText {
                     key: entry.key.clone(),
                     text: entry.text.clone(),
@@ -578,8 +597,8 @@ impl Document {
                     key: entry.key.to_string(),
                     text: entry.text.to_string(),
                     bounds: entry.geometry.bounds.intersect(&entry.clip).into(),
-                    selectable: entry.options.selectable,
-                    searchable: entry.options.searchable,
+                    selectable: entry.options.selectable(),
+                    searchable: entry.options.searchable(),
                 })
                 .collect(),
             content_revision: self.content_revision,
@@ -675,13 +694,13 @@ impl Document {
         let cached = self.cache.entry(key.clone()).or_insert_with(|| Cached {
             text: SharedString::default(),
             matcher: None,
+            matches: None,
             options,
-            matches: Arc::from([]),
             seen: 0,
             index: 0,
         });
         if cached.seen == self.paint {
-            let previous = &self.entries[cached.index];
+            let previous = &self.entries[cached.index as usize];
             assert!(
                 previous.text == text && previous.geometry.bounds == geometry.bounds,
                 "DocumentText keys must identify one logical text"
@@ -690,26 +709,28 @@ impl Document {
         }
         let source_changed = cached.seen == 0 || cached.text != text;
         self.content_changed |=
-            source_changed || cached.index != self.entries.len() || cached.options != options;
+            source_changed || cached.index as usize != self.entries.len() || cached.options != options;
         let same_matcher = match (cached.matcher.as_ref(), matcher) {
             (None, None) => true,
             (Some(a), Some(b)) => Arc::ptr_eq(a, b),
             _ => false,
         };
-        if source_changed || !same_matcher || cached.options.searchable != options.searchable {
+        if source_changed || !same_matcher || cached.options.searchable() != options.searchable() {
             cached.matches = matcher
-                .filter(|_| options.searchable)
-                .map_or_else(|| Arc::from([]), |matcher| matcher.ranges(&text));
+                .filter(|_| options.searchable())
+                .map(|matcher| matcher.ranges(&text))
+                .filter(|ranges| !ranges.is_empty());
             cached.matcher = matcher.cloned();
         }
         cached.text = text.clone();
         cached.options = options;
         cached.seen = self.paint;
-        cached.index = self.entries.len();
+        cached.index = self.entries.len() as u32;
+        let matches = cached.matches.as_deref().unwrap_or(&[]);
         if let Some(search) = &self.props.search {
-            for (local, range) in cached.matches.iter().enumerate() {
+            for (local, range) in matches.iter().enumerate() {
                 let index = options
-                    .match_index_offset
+                    .match_index_offset()
                     .unwrap_or(search.match_index_offset + self.match_count)
                     + local;
                 let active = search.active_index == Some(index);
@@ -741,8 +762,8 @@ impl Document {
                 });
             }
         }
-        self.match_count += cached.matches.len();
-        if options.selectable
+        self.match_count += matches.len();
+        if options.selectable()
             && let Some(range) = self.selected_range(&key, &text)
         {
             let rects = geometry
@@ -1018,15 +1039,15 @@ impl DocumentText {
         self
     }
     pub fn searchable(mut self, searchable: bool) -> Self {
-        self.options.searchable = searchable;
+        self.options.set(SEARCHABLE, searchable);
         self
     }
     pub fn match_index_offset(mut self, offset: usize) -> Self {
-        self.options.match_index_offset = Some(offset);
+        self.options.match_index_offset = u32::try_from(offset).unwrap_or(NO_OFFSET - 1);
         self
     }
     pub fn selectable(mut self, selectable: bool) -> Self {
-        self.options.selectable = selectable;
+        self.options.set(SELECTABLE, selectable);
         self
     }
 }
@@ -1113,6 +1134,18 @@ impl IntoElement for DocumentText {
 }
 
 #[cfg(test)]
+mod layout {
+    use super::{Cached, Entry, TextOptions};
+    use std::mem::size_of;
+    #[test]
+    fn per_text_records_stay_small() {
+        assert_eq!(size_of::<TextOptions>(), 8);
+        assert!(size_of::<Cached>() <= 64, "{}", size_of::<Cached>());
+        assert!(size_of::<Entry>() <= 136, "{}", size_of::<Entry>());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::{Document, DocumentProps, TextKey, geometry};
     use gpui::{self, AppContext, Entity, TestAppContext, WindowHandle};
@@ -1161,7 +1194,7 @@ mod tests {
             {"op":"place","parent":1,"child":2,"before":null}
         ]));
         draw(cx, window);
-        let matches = document.read_with(cx, |doc, _| doc.cache[&TextKey::from("text")].matches.clone());
+        let matches = document.read_with(cx, |doc, _| doc.cache[&TextKey::from("text")].matches.clone().unwrap());
         let revision = document.read_with(cx, |doc, _| doc.content_revision);
         for (sequence, (active, offset, width)) in [(1, 0, 150.), (5, 4, 300.)].into_iter().enumerate() {
             window
@@ -1175,7 +1208,10 @@ mod tests {
             draw(cx, window);
             document.read_with(cx, |doc, _| {
                 assert!(
-                    Arc::ptr_eq(&matches, &doc.cache[&TextKey::from("text")].matches),
+                    doc.cache[&TextKey::from("text")]
+                        .matches
+                        .as_ref()
+                        .is_some_and(|current| Arc::ptr_eq(&matches, current)),
                     "cursor and paint changes must not rematch text"
                 );
                 assert_eq!(doc.content_revision, revision);

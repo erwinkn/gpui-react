@@ -128,6 +128,8 @@ Run Clippy:
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
   cargo clippy --all-targets --all-features --manifest-path crates/gpui-react/Cargo.toml -- -D warnings
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
+  cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-macros/Cargo.toml -- -D warnings
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
   cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-controls/Cargo.toml -- -D warnings
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
   cargo clippy --all-targets --all-features --manifest-path crates/gpui-react-host/Cargo.toml -- -D warnings

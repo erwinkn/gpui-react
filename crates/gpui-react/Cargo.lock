@@ -1335,9 +1335,19 @@ dependencies = [
  "anyhow",
  "csscolorparser",
  "gpui",
+ "gpui-react-macros",
  "rustc-hash",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "gpui-react-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]

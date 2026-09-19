@@ -4,7 +4,8 @@ use gpui_react_host::gpui_react::*;
 use serde::Deserialize;
 use std::{io::Write, time::Duration};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, gpui_react_host::gpui_react::ComponentProps)]
+#[wire(crate = "gpui_react_host::gpui_react")]
 struct Props {
     record_path: String,
 }

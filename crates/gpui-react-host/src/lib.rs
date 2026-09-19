@@ -1,7 +1,10 @@
 //! A native UI loop and bounded worker channel. The worker owns no Rust UI tree.
 use futures::channel::mpsc;
 use gpui_react::{Decoder, Prepared, Registry};
-use napi::{Env, Error, Result, bindgen_prelude::AsyncTask};
+use napi::{
+    Env, Error, Result,
+    bindgen_prelude::{AsyncTask, Either, Uint8Array},
+};
 use napi_derive::napi;
 use serde_json::Value;
 use std::{
@@ -164,32 +167,45 @@ impl NativeClient {
     }
 
     /// Decode to typed data on the worker. The UI thread receives typed
-    /// operations and does no JSON work; it applies them to the host tree.
+    /// operations and does no wire work; it applies them to the host tree.
+    /// Binary payloads are borrowed for the duration of this call and never
+    /// retained, so the worker may reuse the buffer afterwards.
     #[napi]
-    pub fn send(&self, encoded: String) -> Result<()> {
-        if encoded.len() > MAX_BYTES {
+    pub fn send(&self, encoded: Either<String, Uint8Array>) -> Result<()> {
+        let len = match &encoded {
+            Either::A(text) => text.len(),
+            Either::B(bytes) => bytes.len(),
+        };
+        if len > MAX_BYTES {
             return Err(Error::from_reason("Native transaction exceeds byte limit"));
         }
-        let transaction = self
-            .decoder
-            .lock()
-            .unwrap()
-            .parse(&encoded)
-            .map_err(|e| Error::from_reason(format!("Native transaction failed: {e:#}")))?;
+        let transaction = {
+            let mut decoder = self.decoder.lock().unwrap();
+            match &encoded {
+                Either::A(text) => decoder.parse(text),
+                Either::B(bytes) => decoder.parse_binary(bytes),
+            }
+        }
+        .map_err(|e| Error::from_reason(format!("Native transaction failed: {e:#}")))?;
         let mut queues = self.session.queues.lock().unwrap();
         if let Some(reason) = &queues.reason {
             return Err(Error::from_reason(reason.clone()));
         }
-        if queues.commands.len() >= MAX_TRANSACTIONS
-            || queues.command_bytes + encoded.len() > MAX_BYTES
-        {
+        if queues.commands.len() >= MAX_TRANSACTIONS || queues.command_bytes + len > MAX_BYTES {
             return Err(Error::from_reason("Native command queue is full"));
         }
-        queues.command_bytes += encoded.len();
-        queues.commands.push_back((transaction, encoded.len()));
+        queues.command_bytes += len;
+        queues.commands.push_back((transaction, len));
         drop(queues);
         self.session.wake();
         Ok(())
+    }
+
+    /// The component kind table as JSON: the worker encodes props against it.
+    #[napi]
+    pub fn schema(&self) -> Result<String> {
+        serde_json::to_string(&self.decoder.lock().unwrap().registry().schema())
+            .map_err(|e| Error::from_reason(e.to_string()))
     }
 
     #[napi]
@@ -231,7 +247,7 @@ impl napi::Task for Receive {
 
 #[napi]
 pub fn bridge_runtime_version() -> u32 {
-    1
+    2
 }
 
 #[cfg(test)]
@@ -248,18 +264,18 @@ mod tests {
         };
         for sequence in 1..=MAX_TRANSACTIONS {
             client
-                .send(
+                .send(Either::A(
                     serde_json::json!({"version":1,"sequence":sequence,"operations":[]})
                         .to_string(),
-                )
+                ))
                 .unwrap();
         }
         assert!(
             client
-                .send(
+                .send(Either::A(
                     serde_json::json!({"version":1,"sequence":MAX_TRANSACTIONS+1,"operations":[]})
                         .to_string()
-                )
+                ))
                 .is_err()
         );
         for sequence in 1..=MAX_TRANSACTIONS {
@@ -267,13 +283,13 @@ mod tests {
         }
         assert_eq!(session.queues.lock().unwrap().command_bytes, 0);
         assert!(session.pop().is_none());
-        assert!(client.send("not json".into()).is_err());
-        assert!(client.send(" ".repeat(MAX_BYTES + 1)).is_err());
+        assert!(client.send(Either::A("not json".into())).is_err());
+        assert!(client.send(Either::A(" ".repeat(MAX_BYTES + 1))).is_err());
         assert!(session.pop().is_none());
         session.close("done");
         assert!(
             client
-                .send(serde_json::json!({"version":1,"sequence":999,"operations":[]}).to_string())
+                .send(Either::A(serde_json::json!({"version":1,"sequence":999,"operations":[]}).to_string()))
                 .is_err()
         );
     }

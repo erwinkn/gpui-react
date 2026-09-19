@@ -798,3 +798,311 @@ Worker mount: 10.2 + 4.3 ms → 7.8 + 1.25 ms. Rust heap after mount, flow
 scene: 1,847 → 963 KiB against 964 KiB raw. All crate tests, the nine
 offscreen examples, the GPU component example, and the native counter suite
 pass at each step.
+
+### Placement in create, per-kind extras, packed document records
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| `create` carries `parent` and `before`; `place` is sent only for moves. | Keep a placement operation per node. | High | Wire text 934 KB → 725 KB at 5,000 rows; mount 2.1 ms → 1.35 ms. |
+| `Text` props decode straight into `SharedString`. | Decode to `String`, then convert. | High | One copy from the wire instead of two. |
+| `ReactElement::Extras`: one per-kind side structure keyed by slot for what only some rows carry. `Text` is 48 bytes, `Container` 16 bytes. | Per-row `Option<Box<Rare>>` and `Rc<ScrollHandle>`. | High | Rust heap after mount fell 160 KiB at 5,000 rows. A row that gains a handle later costs a map entry, not a box. `unmount` must clear the slot's entries because slots are reused. |
+| Document text options as 8 bytes; cache record 64 bytes; no allocation for an empty match list. | Keep `Option<usize>` and `Arc::from([])` per text. | High | 400 KiB less after the first flow draw at 5,000 rows. |
+| The slow empty draw after removal stays. | Hunt it in the bridge. | High | It is 2.4 ms with a document root and 0.9 ms with a container root in both modes, and the freed bytes are identical: document teardown in GPUI. |
+| Stop before the compact wire. | Continue into a binary format. | | The remaining mount cost is tokenizing 725 KB of JSON text. The format is the user's decision. |
+
+Measured at 5,000 rows after these changes, medians of three repeats
+([full report](../../docs/bridge-frame-cost.md)): bridge list mount 1.37 ms,
+draw 0.25 ms, 1,303 KiB after mount; flow mount 1.32 ms, draw 9.68 ms, 806 KiB
+after mount against 964 KiB raw. Worker mount 7.0 ms render and 0.41 ms seal;
+host records are 0.78 MB of the 8.6 MB worker heap.
+
+### Compact wire, step 1: encoder spike
+
+Go/no-go for a worker-side binary encoder, measured with
+`fixtures/bridge-counter/js-wire-spike.tsx` on the real mount transaction (5,007
+operations). The spike encodes a flat operation stream with a length-prefixed
+value tree for props and per-transaction interned keys, and round-trips the bytes
+to check them. Medians of 50 iterations, Bun 1.4.2.
+
+| Encoder, 5,000 rows | Seal | Bytes |
+| --- | ---: | ---: |
+| `JSON.stringify` + `Buffer.byteLength` (current) | 0.26–0.29 ms | 825 KB |
+| Binary, `encodeInto` per string, `DataView` | 0.41–0.55 ms | 505 KB |
+| Binary, ASCII byte loop, plain byte writes | 0.35–0.36 ms | 505 KB |
+| Same, plus one copy out of the buffer | 0.36–0.39 ms | 505 KB |
+| Binary, `Buffer.utf8Write` per string, plain byte writes | 0.30–0.31 ms | 505 KB |
+| `bun:jsc` `serialize` (structured clone) | 1.3–1.5 ms | 778 KB |
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| Go: the JavaScript encoder stays under 0.5 ms and 0.1 ms above native stringify. | Shrink the JSON instead. | High | The worker pays about 0.1 ms more per 5,000 creates; the native side drops the 0.55 ms tokenize and most of the 0.5 ms typed decode. |
+| Strings go through `Buffer.utf8Write`, one native call that returns a number. | `encodeInto`, which allocates a result object per call; a manual ASCII loop. | High | Per-string call cost was the largest share: 0.5 ms with `encodeInto`, 0.36 ms with the loop, 0.30 ms with `utf8Write`. Needs the `Buffer` method; a `TextEncoder` fallback stays for other runtimes. |
+| Pass the buffer to N-API as a `Uint8Array`, decoded in place. | Keep a string argument; `bun:jsc` structured clone; `bun:ffi`. | High | A string argument is converted to UTF-8 into a Rust `String` before decode. The structured clone is five times slower and larger than JSON. `bun:ffi` saves only call overhead on one call per transaction and drops Node. |
+| One copy of the buffer into native; no shared memory. | `SharedArrayBuffer` between worker and host. | High | The copy of 505 KB measured 0.03 ms. |
+
+### Compact wire, step 1b: crossing into native, and the cold encoder
+
+`fixtures/bridge-wire-spike` is a throwaway N-API addon with three ways to hand
+the sealed bytes to Rust, each reading only the length and the end bytes so the
+crossing itself is what is timed. `fixtures/bridge-counter/js-wire-native.tsx`
+runs them on the 5,000-row mount. Medians of 50 iterations after 300 warm-ups.
+
+| Path, 5,000 rows | Crossing alone | Seal plus crossing |
+| --- | ---: | ---: |
+| `JSON.stringify`, string argument (today) | 0.03 ms | 0.27–0.29 ms |
+| Binary into an own reused buffer, `Uint8Array` argument, borrowed | 0.000 ms | 0.28–0.29 ms |
+| Same, plus one native copy of the 505 KB | 0.006 ms | 0.29 ms |
+| Binary into a native-owned pre-allocated buffer, `commit(len)` | 0.000 ms | 0.28 ms |
+
+Cold first call in a fresh process, which is what an application's mount pays:
+`JSON.stringify` 0.32–0.37 ms; the binary encoder 1.5 ms, and 0.8 ms on the
+second call. The encoder needs a few hundred calls of this size to reach the FTL
+tier; the earlier spike numbers moved between 0.29 and 0.44 ms with the warm-up
+count, and without FTL the encoder takes 0.72 ms, without DFG 1.7 ms.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| Pass the bytes as a `Uint8Array` argument and decode them in place during the call. | A native-owned pre-allocated buffer that JavaScript writes into. | High | Both cross in under a microsecond and seal at the same speed. The native buffer adds a fixed size limit with a fallback path, an external-memory lifetime across N-API, and gains nothing measurable. The own buffer is reused across transactions, so it does not churn the GC either. |
+| Accept the cold first call and measure it against the native decode saving in step 3. | Keep JSON for the first transaction. | Medium | Warm, the two encoders tie at about 0.28 ms plus crossing. Cold, the binary encoder costs about 1.2 ms more than stringify on the mount, against an expected 0.8 ms saving on the native side. If step 3 does not recover it, the mount is a wash and updates are the gain. |
+
+### Compact wire, step 1c: native reads of the JavaScript tree
+
+Can native code take the operation objects straight from JavaScript, so the
+worker does no serialization at all? Two entry points in the spike addon read the
+5,000-row mount through N-API: serde over `Unknown`, and a hand walk of the
+create operations with the raw object API. Warm medians of 50.
+
+| Path, 5,000 rows | Warm | Cold first call |
+| --- | ---: | ---: |
+| `JSON.stringify` + string argument | 0.28 ms | 0.35 ms |
+| Binary encoder + `Uint8Array` argument | 0.39 ms | 1.5 ms |
+| Native hand walk of the JavaScript objects | 2.0 ms | 2.0 ms |
+| Native serde over the JavaScript objects | 6.9 ms | 7.5 ms |
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| Native does not read JavaScript objects; the wire stays a byte payload built in JavaScript. | Serde or a hand walk over N-API. | High | Every property read is an N-API call and every string a copy: about 40,000 calls for the mount, 2 ms at best. Only the engine's own built-ins (`JSON.stringify`, structured clone) get direct value access, and Bun does not expose that to addons. |
+
+### Compact wire, step 3: the native decode
+
+`Decoder::parse_binary` decodes the spike's binary wire with the real component
+registry. `wire::Reader` is a serde `Deserializer` over the bytes, so every
+component's typed props use the same derive as for JSON; each binding gains a
+`decode_wire` pointer beside its JSON one. A unit test decodes the dumped
+1,000-row mount through both paths and checks every operation, every prop, and
+every style definition for equality. `fixtures/bridge-wire-spike/decode-bench`
+times both on the 5,000-row mount, medians of 100 with a counting allocator.
+
+| Native decode, 5,000 rows | Time | Allocations |
+| --- | ---: | ---: |
+| JSON tokenize floor, `serde_json` `IgnoredAny` | 0.68 ms | 1 |
+| JSON tokenize floor, `sonic-rs` `IgnoredAny` (SIMD) | 0.70 ms | 1 |
+| JSON `Decoder::parse` (today) | 1.15 ms | 15,022, 1.51 MB |
+| Binary `Decoder::parse_binary` | 0.40 ms | 15,012, 1.34 MB |
+| Binary, plus one copy of the 505 KB | 0.41 ms | |
+
+At 1,000 rows: JSON 0.24 ms, binary 0.08 ms. The remaining allocations are the
+typed payloads themselves: a box, a string, and a style handle per text.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| The binary wire is worth it on the native side: 0.75 ms less per 5,000-row mount, three times faster, fewer bytes allocated. | A SIMD JSON tokenizer in front of the typed decode. | High | `sonic-rs` skips the 825 KB no faster than `serde_json`; the JSON floor is the bytes, not the parser. |
+| The whole ledger for a 5,000-row mount: warm, 0.76 ms less end to end; cold, about 0.4 ms more on the very first transaction because the JavaScript encoder starts at the interpreter tier. | Keep JSON. | High | Every transaction after the first big one is a net gain, and updates are small enough that the cold tier does not matter. |
+
+### Compact wire, step 2: the props schema
+
+Native declares each component's props for the worker. `#[derive(ComponentProps)]`
+in the new `gpui-react-macros` crate reads a props struct as serde will and
+emits `SCHEMA`: wire name, wire type, and required flag per field. `ReactView`
+and `ReactElement` require it on `Props`; `()` and `serde_json::Map` have
+built-in impls (the map means "no positional schema, send a map").
+`Registry::schema()` is the kind table and `NativeClient.schema()` hands it to
+the worker as JSON at attach; the root keeps a name-to-index map.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| The derive reads serde attributes (`default`, `rename`, `rename_all`, `skip`) rather than adding its own. | A separate `#[wire(...)]` vocabulary. | High | One struct, one set of annotations. `flatten`, `tag`, and `rename_all` other than camelCase are rejected at compile time. |
+| `Registry::verify_schemas()` compares each derived schema with the field list serde's own derive asks for, captured from `deserialize_struct`. | Trust the macro. | High | Any mismatch between the two derives would misplace fields on the wire; the check is exact and runs in the controls tests. |
+| Numeric wire types come from the Rust type: `usize` and `u64` travel as `u32`, `f32` as 4 bytes. | f64 for every number. | High | An integer field is never written as a float, and native reads without conversion. Counts above 4 billion are rejected on the worker. |
+| Unknown Rust types map to `value`, the tagged tree. | Fail the derive. | High | Unit enums such as `scroll: "y"` and arrays such as `captureKeys` still work; they pay one tag byte. |
+| `deny_unknown_fields` stays on the props structs. | Remove it, as the plan said. | High | The binary decode is positional and never sees an unknown field, so the attribute costs nothing there, and the JSON path keeps its error for typos while both paths coexist. |
+
+### Compact wire, step 3: the encoder in the commit hooks
+
+`packages/bridge/src/wire.ts` holds both encoders behind one interface. The
+JSON encoder is the old code moved. The binary encoder writes bytes as React
+commits: `create` and `update` read each schema field by name from the React
+props and write it positionally after a presence mask; `update` compares the
+schema fields first and writes nothing when they are equal. Sealed payloads
+come from a small buffer pool, so a payload stays valid until its send settles
+while the next transaction writes elsewhere. `decodeWire` rebuilds operation
+objects for tests and benches. The worker bench (`js-bench.tsx`) takes
+`BRIDGE_WIRE`, `BRIDGE_WIRE_CHECKS`, and a schema dumped by
+`gpui-react-frame-cost schema`; it now reports the first, cold mount too.
+
+Medians of 5 in-process repeats, 3 processes each, 5,000 rows, flow scene. The
+binary encoder's props work happens inside the commit, so it appears under
+"React render and commit", not under "seal".
+
+| React build | Wire | Render and commit | Seal | Total | Cold first mount | Wire | JS heap |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| development | JSON | 7.2 ms | 0.5 ms | 7.7 ms | 30.0 + 1.0 ms | 825 KB | 8.8 MB |
+| development | binary | 7.8 ms | 0.03 ms | 7.8 ms | 31.2 + 0.3 ms | 435 KB | 8.7 MB |
+| production | JSON | 3.2 ms | 0.47 ms | 3.7 ms | 8.7 + 1.0 ms | 825 KB | 5.7 MB |
+| production | binary | 3.4 ms | 0.03 ms | 3.4 ms | 9.2 + 0.3 ms | 435 KB | 5.7 MB |
+
+Unmemoized one-line update, production: JSON 1.45 ms, binary 1.46 ms.
+Number-heavy synthetic scene (a list per row, five numeric props), production
+binary: checks on 3.2 / 2.9 / 3.2 ms, checks off 3.1 / 3.2 / 3.7 ms.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| Compare schema fields first on update; encode only when something changed. | Encode, then rewind when unchanged. | High | Encode-then-rewind cost 1.9 ms more on the unmemoized 5,000-row update, because every row was encoded and discarded. |
+| Number checks stay on in production. | Development-only checks with silent clamping. | High | Three runs each way land within the run-to-run noise (about 0.3 ms). A wrong type still fails the root with the component and field name. |
+| Bool fields are one byte after the mask, not a second mask. | Bool in the presence mask. | High | A bool prop has three states on the wire: absent (default), true, false. `selectable` defaults to true, so absent and false must differ. |
+| Worker benchmarks report React's production build from now on. | Keep measuring the development build. | High | The development build doubles render time (7.2 against 3.2 ms) and hid the wire's share. Earlier worker numbers in the docs were development-build numbers. |
+| Gate result: pass. | | | Warm, binary is 0.3 ms below JSON end to end in production and equal in development; the cold first mount is 0.2 ms below JSON; wire −47%; heap equal. |
+
+### Compact wire, steps 4 and 5: native decode in place, and the numbers
+
+`NativeClient.send` takes JSON text or bytes. Bytes are borrowed for the call
+and decoded by `Decoder::parse_binary`: kind indices instead of names, and
+props read positionally by `wire::PropsReader` against the component's schema
+into the same serde derives. The worker attaches on the binary wire; the
+runtime version is 2. The frame fixture gained a `binary` mode and both bridge
+modes now mount the transaction the JavaScript bridge sealed for the scene, so
+the comparison is between real payloads, and the image check covers all three
+modes. Full tables are in [the frame report](../../docs/bridge-frame-cost.md).
+
+| Native mount, 5,000 rows | JSON | Binary |
+| --- | ---: | ---: |
+| list | 1.62 ms | 0.84 ms |
+| flow | 1.48 ms | 0.67 ms |
+| Wire | 825 KB | 435 KB |
+| Rust heap after mount, allocations, draw | identical | identical |
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| Positional props feed the props struct's own `Deserialize` derive as a map of (name, value) pairs. | A second derive that reads fields directly. | High | Defaults, renames, `deserialize_with`, and untagged enums such as `SharedStyle` keep working unchanged; the derive is exercised by the equivalence test on the real dump. |
+| The derive unwraps `Type::Group` and `Type::Paren`. | Treat them as free-form values. | High | A props struct declared through a `macro_rules!` fragment had every field typed as a value, which misaligned the positional read. Found by the mirror structs in the core test. |
+| Fixture node ids follow the bridge: root 0, header 1, list 2. | Keep 1-based ids and translate. | High | The fixture's update and removal transactions target ids; the JS dump and the Rust-built JSON must agree. |
+| Gate result: pass. | | | Native mount at 5,000 rows fell below 1.0 ms on both scenes; heap, allocations, and draw are unchanged; the counter suite runs end to end on the binary wire. |
+| The JSON path stays, selectable per root; the spike fixtures are deleted. | Remove JSON now. | Medium | Both wires stay measurable on one build until the user decides. The spike's addon and decode bench are reproduced by `js-bench.tsx` and the frame fixture. |
+
+Worker side, React production build, 5,000 rows: the wires are within noise on
+the plain scenes (list mount 3.6 + 0.46 ms JSON against 3.6 + 0.03 ms binary);
+with memoized rows the binary encoder measured about 0.5 ms more per mount. End
+to end a mount is about 1.2 ms cheaper on the binary wire; the cold first mount
+is about equal.
+
+### Compact wire, step 6: does the single walk pay, and the memoized-rows gap
+
+Two questions after step 5: does encoding in the commit, which removes the
+filter-and-copy walk, save anything on its own; and why the binary wire looked
+0.5 ms slower with memoized rows. A third encoder, `binary-deferred`, records
+operation objects as JSON does and runs the binary encoder at seal, so the only
+difference from the in-commit encoder is the extra walk. It is selectable by
+`wire: "binary-deferred"` and kept for measurement.
+
+The first runs disagreed with themselves: the JSON path's commit measured 1.5 ms
+slower than the deferred path's identical commit code. A CPU profile attributed
+the extra time to React's own functions, and a heap trace showed the difference:
+the bench forces a collection before every mount, and the two paths' allocation
+profiles then decide where the next collection lands. Retaining 32 MB of objects
+(`BENCH_BALLAST=32`) raises the collector's threshold and removes the effect.
+
+| List, 5,000 rows, production React, late repeats | Default pacing | Pacing controlled |
+| --- | ---: | ---: |
+| JSON at seal | 3.0 + 0.4 ms | 2.1 + 0.4 ms |
+| Binary at seal, two walks | 1.8 + 1.3 ms | 2.1 + 0.4 ms |
+| Binary in the commit, one walk | 2.9 + 0.02 ms | 2.5 + 0.02 ms |
+| Memoized rows, JSON | 2.9 + 0.4 ms | 2.5 + 0.4 ms |
+| Memoized rows, binary in the commit | 3.9 + 0.02 ms | 2.85 + 0.02 ms |
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| The single walk stays, but not for speed: it is equal within 0.1 ms. | Move the binary encoder to seal. | High | The encoder costs about 0.4 ms in either place; the filter-and-copy walk it removes is not measurable at 5,000 two-prop nodes. The in-commit form has no operation objects and no second data structure. |
+| The memoized-rows regression is withdrawn. | Chase an encoder cause. | High | Under controlled pacing the two wires tie; the gap was collections landing in the commit. |
+| Worker sub-millisecond comparisons need `BENCH_BALLAST` and `BENCH_NO_PARSE`, and must report late repeats. | Compare medians of five with a forced collection before each mount. | High | The forced collection made the collector's pacing part of the measurement, and the transport's own decode added garbage between commits. |
+
+### Compact wire, step 7: record references, encode once at seal
+
+A fourth placement, proposed in review: the commit stores only references
+(tag, ids, kind, and the React props object, which is immutable) in parallel
+arrays, and one walk at seal reads the props through the schema and writes the
+bytes. No filtered copy, no operation objects, and the encoder runs as one
+tight loop. It is `wire: "binary-recorded"` in `wire-variants.ts`, decodes to
+the same operations as the in-commit encoder, and was measured under
+controlled pacing beside the others.
+
+| List, 5,000 rows, pacing controlled, late repeats | Commit | Seal | Total |
+| --- | ---: | ---: | ---: |
+| JSON at seal | 2.1 ms | 0.4 ms | 2.5 ms |
+| Binary at seal over filtered copies | 2.2 ms | 0.4 ms | 2.6 ms |
+| Binary at seal over recorded references | 1.8 ms | 1.0 ms | 2.7 ms |
+| Binary in the commit | 2.5 ms | 0.02 ms | 2.5 ms |
+
+The recorded variant has the cheapest commit, but its seal is 1.0 ms against
+0.4 ms for the same bytes. The difference is the style interning: each fresh
+style literal is keyed by `JSON.stringify` and looked up, about 0.5 ms per
+5,000 nodes, and the other placements pay it in the commit. Reading 5,000
+React props objects a second time at seal, after React's commit has moved on,
+costs the rest.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| Placement of the encoder stays as it is; the four forms are within 0.2 ms. | Adopt the recorded form for its tight loop. | High | Its total is the highest of the four by a small margin, and it defers required-prop errors to the seal. |
+| The measurable cost in the bridge's own code is style interning of fresh literals, not the walks. | Optimize the walk further. | High | 0.5 ms per 5,000 nodes in every placement. Hoisted style objects hit the identity map and pay nothing; a cheaper key for fresh literals is the next lever if apps render inline styles per row. |
+
+Addendum, hoisted styles (`BENCH_HOIST=1`, on battery, same sitting, pacing
+controlled, medians of repeats 4 to 8): with the row style hoisted to module
+scope so the identity cache hits, every placement loses the same 0.3 ms and the
+ranking does not change.
+
+| List, 5,000 rows | Inline styles | Hoisted styles |
+| --- | ---: | ---: |
+| JSON at seal | 2.0 + 0.37 ms | 1.7 + 0.40 ms |
+| Binary at seal over filtered copies | 2.1 + 0.40 ms | 1.7 + 0.40 ms |
+| Binary at seal over recorded references | 1.7 + 0.93 ms | 1.7 + 0.55 ms |
+| Binary in the commit | 2.4 + 0.01 ms | 2.1 + 0.01 ms |
+
+The recorded form's seal keeps 0.15 ms over the filtered-copy form after the
+style cost is gone: reading the React props a second time at seal, after the
+commit has moved on, against reading freshly written copies.
+
+Addendum, cold first mount (fresh process each, six per variant, on battery,
+medians): the seal-time encoder is the slowest cold, not the fastest. Its
+encode runs as one loop at the interpreter tier, 1.9 ms, while the in-commit
+encoder's calls are spread through React's commit and tier up with it.
+
+| List, 5,000 rows, cold | Inline styles | Hoisted styles |
+| --- | ---: | ---: |
+| JSON at seal | 8.5 + 1.0 = 9.5 ms | 8.6 + 1.0 = 9.7 ms |
+| Binary at seal over filtered copies | 8.5 + 1.9 = 10.5 ms | 8.2 + 1.9 = 10.1 ms |
+| Binary in the commit | 9.7 + 0.3 = 10.0 ms | 9.4 + 0.3 = 9.8 ms |
+
+Addendum, encoder warm-up (`BENCH_WARMUP=<creates>`, fresh process each, six
+per size, hoisted styles, on battery, medians): no size pays for itself.
+
+| Synthetic creates before the first render | Warm-up | First mount | Sum |
+| ---: | ---: | ---: | ---: |
+| 0 | 0 ms | 9.0 ms | 9.0 ms |
+| 200 | 0.4 ms | 9.4 ms | 9.8 ms |
+| 500 | 0.5 ms | 9.3 ms | 9.8 ms |
+| 1,000 | 0.7 ms | 9.3 ms | 10.0 ms |
+| 2,000 | 1.0 ms | 8.6 ms | 9.7 ms |
+| 5,000 | 1.7 ms | 8.7 ms | 10.4 ms |
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | ---: | --- |
+| No encoder warm-up. | Warm at root creation. | High | The first mount gains 0.4 ms only after 2,000 synthetic creates, which cost 1.0 ms; smaller warm-ups do not reach the tier thresholds and gain nothing. The cold first mount is React's own tiering, about 8.5 of the 9 ms, which the application's first render pays on any wire. |
+
+### Compact wire, closing: the shipped form
+
+The in-commit binary encoder is the shipped form: it ties the alternatives
+warm, leads them cold by a small margin, and carries no operation objects. The
+measurement encoders (`binary-deferred`, `binary-recorded`) and the warm-up
+hook are removed; their numbers stay in the sections above. The bench keeps
+the switches that made the comparisons fair: hoisted styles, ballast, no
+transport decode, update count, and the heap trace. The JSON wire remains
+selectable per root as the baseline; removing it is the one open decision.

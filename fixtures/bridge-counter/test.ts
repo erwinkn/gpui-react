@@ -42,7 +42,7 @@ try {
   const repeat = await run("bun", [join(fixture, "host.ts")], undefined, "repeat")
   assert.equal(repeat.match(/Native counter state after worker stall/g)?.length, 3)
   console.log("PASS three sequential native sessions")
-  for (const [mode, message] of [["startup-error", /Expected worker startup failure/], ["missing", /missing-worker/], ["invalid-props", /Native transaction failed/]] as const) {
+  for (const [mode, message] of [["startup-error", /Expected worker startup failure/], ["missing", /missing-worker/], ["invalid-props", /counter\.step must be an unsigned 32-bit integer/]] as const) {
     await assert.rejects(run("bun", [join(fixture, "host.ts")], undefined, mode), message)
     console.log(`PASS ${mode} cleanup`)
   }

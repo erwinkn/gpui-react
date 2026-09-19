@@ -2,7 +2,7 @@
 //! owns a table of its kind's rows on the UI thread: either host-owned element
 //! values or GPUI entities.
 use crate::{
-    Children, ElementCommands, ElementContext, ElementQueries, Host, ReactChildren,
+    wire, Children, ElementCommands, ElementContext, ElementQueries, Host, ReactChildren,
     ReactCommands, ReactElement, ReactEvents, ReactQueries, ReactView, RenderContext,
 };
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
@@ -66,6 +66,18 @@ fn decode<T: DeserializeOwned + Send + 'static>(value: &RawValue) -> Result<Payl
     Ok(Box::new(serde_json::from_str::<T>(value.get())?))
 }
 
+/// A free-form value from the tagged tree: commands and queries.
+fn decode_wire<T: DeserializeOwned + Send + 'static>(reader: &mut wire::Reader<'_>) -> Result<Payload> {
+    Ok(Box::new(T::deserialize(reader)?))
+}
+/// Props: positional against the type's schema, or a tagged map without one.
+fn decode_wire_props<T: DeserializeOwned + wire::ComponentProps + Send + 'static>(reader: &mut wire::Reader<'_>) -> Result<Payload> {
+    Ok(Box::new(match T::SCHEMA {
+        wire::Schema::Fields(fields) => T::deserialize(wire::PropsReader { reader, fields })?,
+        wire::Schema::Map => T::deserialize(reader)?,
+    }))
+}
+
 fn take<T: 'static>(value: Payload) -> Result<T> {
     value
         .downcast::<T>()
@@ -73,7 +85,17 @@ fn take<T: 'static>(value: Payload) -> Result<T> {
         .map_err(|_| anyhow!("binding type mismatch"))
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+/// One component as the worker sees it.
+#[derive(Debug, Serialize)]
+pub struct KindSchema {
+    pub name: String,
+    pub capabilities: Capabilities,
+    /// `None` when the props type has no positional schema and travels as a map.
+    pub fields: wire::Schema,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Capabilities {
     pub events: bool,
     pub commands: bool,
@@ -109,7 +131,8 @@ pub trait Table {
     fn child_changed(&self, slot: u32, child: u32, window: &mut Window, cx: &mut App);
     fn remove(&mut self, slot: u32, cx: &mut ElementContext);
     fn view(&self, slot: u32) -> Option<AnyView>;
-    fn element_mut(&mut self, slot: u32) -> Option<&mut dyn Any>;
+    /// The row and its kind's extras, for host-owned elements.
+    fn element_mut(&mut self, slot: u32) -> Option<(&mut dyn Any, &mut dyn Any)>;
     fn reserve(&mut self, additional: usize);
 }
 
@@ -118,10 +141,17 @@ pub trait Binding: Send + Sync + 'static {
     fn name(&self) -> &str;
     fn capabilities(&self) -> Capabilities;
     fn decode(&self, kind: Kind, value: &RawValue) -> Result<Payload>;
+    /// The same typed decode from the binary wire.
+    fn decode_wire(&self, kind: Kind, reader: &mut wire::Reader<'_>) -> Result<Payload>;
+    /// The props schema the worker encodes against.
+    fn schema(&self) -> wire::Schema;
+    /// Checks the derived schema against serde's view of the props struct.
+    fn verify_schema(&self) -> Result<()>;
     fn table(&self) -> Box<dyn Table>;
 }
 
 type Decode = fn(&RawValue) -> Result<Payload>;
+type DecodeWire = fn(&mut wire::Reader<'_>) -> Result<Payload>;
 
 /// Dense rows with a free list. Removed rows are reused before the vector grows.
 struct Rows<T> {
@@ -140,14 +170,19 @@ impl<T> Rows<T> {
         self.rows.reserve_exact(additional);
     }
     fn insert(&mut self, row: T) -> u32 {
+        self.insert_with(|_| row)
+    }
+    /// Insert a row built with knowledge of its slot.
+    fn insert_with(&mut self, build: impl FnOnce(u32) -> T) -> u32 {
         match self.free.pop() {
             Some(slot) => {
-                self.rows[slot as usize] = Some(row);
+                self.rows[slot as usize] = Some(build(slot));
                 slot
             }
             None => {
-                self.rows.push(Some(row));
-                (self.rows.len() - 1) as u32
+                let slot = self.rows.len() as u32;
+                self.rows.push(Some(build(slot)));
+                slot
             }
         }
     }
@@ -180,8 +215,8 @@ type ChildChanged<T> = fn(&Entity<T>, u32, &mut Window, &mut App);
 pub struct Component<T: ReactView> {
     name: String,
     subscribe: Option<Subscribe<T>>,
-    command: Option<(Decode, Apply<T>)>,
-    query: Option<(Decode, Apply<T>)>,
+    command: Option<(Decode, DecodeWire, Apply<T>)>,
+    query: Option<(Decode, DecodeWire, Apply<T>)>,
     children: Option<(SetChildren<T>, ChildChanged<T>)>,
     _view: PhantomData<fn() -> T>,
 }
@@ -210,7 +245,7 @@ impl<T: ReactView> Component<T> {
     where
         T: ReactCommands,
     {
-        self.command = Some((decode::<T::Command>, |entity, value, window, cx| {
+        self.command = Some((decode::<T::Command>, decode_wire::<T::Command>, |entity, value, window, cx| {
             let command = take::<T::Command>(value)?;
             entity.update(cx, |view, cx| view.command(command, window, cx))?;
             Ok(Value::Null)
@@ -221,7 +256,7 @@ impl<T: ReactView> Component<T> {
     where
         T: ReactQueries,
     {
-        self.query = Some((decode::<T::Query>, |entity, value, window, cx| {
+        self.query = Some((decode::<T::Query>, decode_wire::<T::Query>, |entity, value, window, cx| {
             let query = take::<T::Query>(value)?;
             let reply = entity.update(cx, |view, cx| view.query(query, window, cx))?;
             Ok(serde_json::to_value(reply)?)
@@ -321,7 +356,7 @@ impl<T: ReactView> Table for ViewTable<T> {
     fn view(&self, slot: u32) -> Option<AnyView> {
         Some(self.rows.get(slot).entity.clone().into())
     }
-    fn element_mut(&mut self, _: u32) -> Option<&mut dyn Any> {
+    fn element_mut(&mut self, _: u32) -> Option<(&mut dyn Any, &mut dyn Any)> {
         None
     }
     fn reserve(&mut self, additional: usize) {
@@ -356,12 +391,32 @@ impl<T: ReactView> Binding for Component<T> {
         }
         .with_context(|| format!("{} {}", self.name, kind_name(kind)))
     }
+    fn decode_wire(&self, kind: Kind, reader: &mut wire::Reader<'_>) -> Result<Payload> {
+        match kind {
+            Kind::Props => decode_wire_props::<T::Props>(reader),
+            Kind::Command => self
+                .command
+                .ok_or_else(|| anyhow!("{} has no commands", self.name))?
+                .1(reader),
+            Kind::Query => self
+                .query
+                .ok_or_else(|| anyhow!("{} has no queries", self.name))?
+                .1(reader),
+        }
+        .with_context(|| format!("{} {}", self.name, kind_name(kind)))
+    }
+    fn schema(&self) -> wire::Schema {
+        <T::Props as wire::ComponentProps>::SCHEMA
+    }
+    fn verify_schema(&self) -> Result<()> {
+        wire::verify::<T::Props>().with_context(|| format!("{} props", self.name))
+    }
     fn table(&self) -> Box<dyn Table> {
         Box::new(ViewTable::<T> {
             rows: Rows::new(),
             subscribe: self.subscribe,
-            command: self.command.map(|c| c.1),
-            query: self.query.map(|q| q.1),
+            command: self.command.map(|c| c.2),
+            query: self.query.map(|q| q.2),
             children: self.children,
         })
     }
@@ -369,15 +424,16 @@ impl<T: ReactView> Binding for Component<T> {
 
 // ---- host-owned elements ---------------------------------------------------
 
-type ElementApply<T> = fn(&mut T, Payload, &mut ElementContext) -> Result<Value>;
+type ElementApply<T> =
+    fn(&mut T, &mut <T as ReactElement>::Extras, Payload, &mut ElementContext) -> Result<Value>;
 
 /// Registers a `ReactElement` under a component name with optional capabilities.
 pub struct HostElement<T: ReactElement> {
     name: String,
     events: bool,
     children: bool,
-    command: Option<(Decode, ElementApply<T>)>,
-    query: Option<(Decode, ElementApply<T>)>,
+    command: Option<(Decode, DecodeWire, ElementApply<T>)>,
+    query: Option<(Decode, DecodeWire, ElementApply<T>)>,
     _element: PhantomData<fn() -> T>,
 }
 
@@ -406,8 +462,8 @@ impl<T: ReactElement> HostElement<T> {
     where
         T: ElementCommands,
     {
-        self.command = Some((decode::<T::Command>, |element, value, cx| {
-            element.command(take::<T::Command>(value)?, cx)?;
+        self.command = Some((decode::<T::Command>, decode_wire::<T::Command>, |element, extras, value, cx| {
+            element.command(take::<T::Command>(value)?, extras, cx)?;
             Ok(Value::Null)
         }));
         self
@@ -416,9 +472,9 @@ impl<T: ReactElement> HostElement<T> {
     where
         T: ElementQueries,
     {
-        self.query = Some((decode::<T::Query>, |element, value, cx| {
+        self.query = Some((decode::<T::Query>, decode_wire::<T::Query>, |element, extras, value, cx| {
             Ok(serde_json::to_value(
-                element.query(take::<T::Query>(value)?, cx)?,
+                element.query(take::<T::Query>(value)?, extras, cx)?,
             )?)
         }));
         self
@@ -427,39 +483,47 @@ impl<T: ReactElement> HostElement<T> {
 
 struct ElementTable<T: ReactElement> {
     rows: Rows<T>,
+    extras: T::Extras,
     command: Option<ElementApply<T>>,
     query: Option<ElementApply<T>>,
 }
 
 impl<T: ReactElement> Table for ElementTable<T> {
     fn create(&mut self, props: Payload, _: Option<Emitter>, cx: &mut ElementContext) -> Result<u32> {
-        Ok(self.rows.insert(T::create(take::<T::Props>(props)?, cx)))
+        let props = take::<T::Props>(props)?;
+        let extras = &mut self.extras;
+        Ok(self.rows.insert_with(|slot| {
+            cx.slot = slot;
+            T::create(props, extras, cx)
+        }))
     }
     fn set_props(&mut self, slot: u32, props: Payload, cx: &mut ElementContext) -> Result<()> {
-        self.rows.get_mut(slot).set_props(take::<T::Props>(props)?, cx);
+        self.rows
+            .get_mut(slot)
+            .set_props(take::<T::Props>(props)?, &mut self.extras, cx);
         Ok(())
     }
     fn command(&mut self, slot: u32, value: Payload, cx: &mut ElementContext) -> Result<()> {
         let apply = self.command.ok_or_else(|| anyhow!("element has no commands"))?;
-        apply(self.rows.get_mut(slot), value, cx).map(|_| ())
+        apply(self.rows.get_mut(slot), &mut self.extras, value, cx).map(|_| ())
     }
     fn query(&mut self, slot: u32, value: Payload, cx: &mut ElementContext) -> Result<Value> {
         let apply = self.query.ok_or_else(|| anyhow!("element has no queries"))?;
-        apply(self.rows.get_mut(slot), value, cx)
+        apply(self.rows.get_mut(slot), &mut self.extras, value, cx)
     }
     fn render(&self, slot: u32, cx: &mut RenderContext) -> AnyElement {
-        self.rows.get(slot).render(cx)
+        self.rows.get(slot).render(&self.extras, cx)
     }
     fn set_children(&self, _: u32, _: Children, _: &mut Window, _: &mut App) {}
     fn child_changed(&self, _: u32, _: u32, _: &mut Window, _: &mut App) {}
     fn remove(&mut self, slot: u32, cx: &mut ElementContext) {
-        self.rows.remove(slot).unmount(cx);
+        self.rows.remove(slot).unmount(&mut self.extras, cx);
     }
     fn view(&self, _: u32) -> Option<AnyView> {
         None
     }
-    fn element_mut(&mut self, slot: u32) -> Option<&mut dyn Any> {
-        Some(self.rows.get_mut(slot))
+    fn element_mut(&mut self, slot: u32) -> Option<(&mut dyn Any, &mut dyn Any)> {
+        Some((self.rows.get_mut(slot), &mut self.extras))
     }
     fn reserve(&mut self, additional: usize) {
         self.rows.reserve(additional);
@@ -493,11 +557,32 @@ impl<T: ReactElement> Binding for HostElement<T> {
         }
         .with_context(|| format!("{} {}", self.name, kind_name(kind)))
     }
+    fn decode_wire(&self, kind: Kind, reader: &mut wire::Reader<'_>) -> Result<Payload> {
+        match kind {
+            Kind::Props => decode_wire_props::<T::Props>(reader),
+            Kind::Command => self
+                .command
+                .ok_or_else(|| anyhow!("{} has no commands", self.name))?
+                .1(reader),
+            Kind::Query => self
+                .query
+                .ok_or_else(|| anyhow!("{} has no queries", self.name))?
+                .1(reader),
+        }
+        .with_context(|| format!("{} {}", self.name, kind_name(kind)))
+    }
+    fn schema(&self) -> wire::Schema {
+        <T::Props as wire::ComponentProps>::SCHEMA
+    }
+    fn verify_schema(&self) -> Result<()> {
+        wire::verify::<T::Props>().with_context(|| format!("{} props", self.name))
+    }
     fn table(&self) -> Box<dyn Table> {
         Box::new(ElementTable::<T> {
             rows: Rows::new(),
-            command: self.command.map(|c| c.1),
-            query: self.query.map(|q| q.1),
+            extras: T::Extras::default(),
+            command: self.command.map(|c| c.2),
+            query: self.query.map(|q| q.2),
         })
     }
 }
@@ -545,12 +630,33 @@ impl Registry {
             .ok_or_else(|| anyhow!("unknown component {name}"))
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.bindings.len()
+    }
+
     pub(crate) fn binding(&self, kind: u16) -> &dyn Binding {
         &*self.bindings[kind as usize]
     }
 
     pub fn capabilities(&self, name: &str) -> Result<Capabilities> {
         Ok(self.binding(self.kind(name)?).capabilities())
+    }
+
+    /// The kind table the worker encodes against: index order is kind order.
+    pub fn schema(&self) -> Vec<KindSchema> {
+        self.bindings
+            .iter()
+            .map(|binding| KindSchema {
+                name: binding.name().to_owned(),
+                capabilities: binding.capabilities(),
+                fields: binding.schema(),
+            })
+            .collect()
+    }
+
+    /// Fails when any component's derived schema disagrees with its serde derive.
+    pub fn verify_schemas(&self) -> Result<()> {
+        self.bindings.iter().try_for_each(|binding| binding.verify_schema())
     }
 
     /// One empty row table per kind, in kind order.

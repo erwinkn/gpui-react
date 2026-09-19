@@ -1,5 +1,5 @@
 {
- "note": "Worker-side cost measured by fixtures/bridge-counter/js-bench.tsx with a recording transport; medians. Update is one status-line change; unmemoized rows mean React reconciles every row.",
+ "note": "Worker-side cost measured by fixtures/bridge-counter/js-bench.tsx with a recording transport, React production build (NODE_ENV=production), Bun 1.4.2; medians of five in-process runs, representative of three processes. Update is one status-line change; unmemoized rows mean React reconciles every row. \"json\" and \"binary\" are the two wires on the same build; \"coldMount\" is the first mount in the process. Earlier \"before\"/\"after\" blocks were measured with React's development build and are kept for history.",
  "before": {
   "list5000": {
    "mount": {
@@ -16,39 +16,215 @@
  "after": {
   "list5000": {
    "mount": {
-    "renderMs": 7.769,
-    "sealMs": 1.25,
-    "bytes": 1208456
+    "renderMs": 7.035,
+    "sealMs": 0.409,
+    "bytes": 824597
    },
    "update": {
-    "renderMs": 15.351
+    "renderMs": 13.432
    },
    "remove": {
-    "renderMs": 1.44
+    "renderMs": 1.342
    },
-   "jsHeapAfterMountBytes": 8473952
+   "jsHeapAfterMountBytes": 8557399
   },
   "list5000MemoRows": {
    "mount": {
-    "renderMs": 11.751,
-    "sealMs": 0.746
+    "renderMs": 11.365,
+    "sealMs": 0.448,
+    "bytes": 824597
    },
    "update": {
-    "renderMs": 1.632
+    "renderMs": 1.414
    },
-   "jsHeapAfterMountBytes": 10075548
+   "remove": {
+    "renderMs": 2.244
+   },
+   "jsHeapAfterMountBytes": 10033971
+  },
+  "flow5000": {
+   "mount": {
+    "renderMs": 7.252,
+    "sealMs": 0.417,
+    "bytes": 824590
+   },
+   "update": {
+    "renderMs": 13.517
+   },
+   "remove": {
+    "renderMs": 1.368
+   },
+   "jsHeapAfterMountBytes": 8643431
   },
   "list1000": {
    "mount": {
-    "renderMs": 1.401,
-    "sealMs": 0.182,
-    "bytes": 240456
+    "renderMs": 1.288,
+    "sealMs": 0.103,
+    "bytes": 164597
    },
    "update": {
-    "renderMs": 3.044
+    "renderMs": 2.712
    },
-   "jsHeapAfterMountBytes": 1683959
+   "remove": {
+    "renderMs": 0.393
+   },
+   "jsHeapAfterMountBytes": 1666095
   }
  },
- "plainStringifyMs5000": 0.66
+ "plainStringifyMs5000": 0.292,
+ "hostRecordShare5000": {
+  "note": "fixtures/bridge-counter/js-heap-share.tsx: 5,003 host-shaped records built in isolation; the rest of the worker heap is React fibers, elements, and props.",
+  "hostRecordBytes": 776892,
+  "perRecordBytes": 155.3,
+  "jsHeapAfterMountBytes": 8557399
+ },
+ "gcControlled": {
+  "note": "list, 5,000 rows, NODE_ENV=production, BENCH_NO_PARSE=1, BENCH_BALLAST=32, repeats 2-8 of 9; medians of the late repeats. Render and seal in ms.",
+  "json": { "render": 2.1, "seal": 0.4 },
+  "binaryDeferred": { "render": 2.1, "seal": 0.4 },
+  "binary": { "render": 2.5, "seal": 0.02 },
+  "memoRows": { "json": { "render": 2.5, "seal": 0.4 }, "binary": { "render": 2.85, "seal": 0.02 } }
+ },
+ "production": {
+  "json": {
+   "list5000": {
+    "mount": {
+     "renderMs": 3.62,
+     "sealMs": 0.46,
+     "bytes": 824597
+    },
+    "coldMount": {
+     "renderMs": 9.6,
+     "sealMs": 0.98
+    },
+    "update": {
+     "renderMs": 1.44,
+     "bytes": 121
+    },
+    "remove": {
+     "renderMs": 0.38,
+     "bytes": 65
+    },
+    "jsHeapAfterMountBytes": 5744269
+   },
+   "list5000MemoRows": {
+    "mount": {
+     "renderMs": 4.28,
+     "sealMs": 0.5,
+     "bytes": 824597
+    },
+    "coldMount": {
+     "renderMs": 9.8,
+     "sealMs": 1.04
+    },
+    "update": {
+     "renderMs": 0.3,
+     "bytes": 121
+    },
+    "jsHeapAfterMountBytes": 7074353
+   },
+   "flow5000": {
+    "mount": {
+     "renderMs": 3.7,
+     "sealMs": 0.44,
+     "bytes": 824590
+    },
+    "coldMount": {
+     "renderMs": 9.6,
+     "sealMs": 1.04
+    },
+    "update": {
+     "renderMs": 1.47,
+     "bytes": 121
+    },
+    "jsHeapAfterMountBytes": 5744494
+   },
+   "list1000": {
+    "mount": {
+     "renderMs": 0.57,
+     "sealMs": 0.13,
+     "bytes": 164597
+    },
+    "coldMount": {
+     "renderMs": 4.59,
+     "sealMs": 0.55
+    },
+    "update": {
+     "renderMs": 0.29,
+     "bytes": 121
+    },
+    "jsHeapAfterMountBytes": 1139670
+   }
+  },
+  "binary": {
+   "list5000": {
+    "mount": {
+     "renderMs": 3.56,
+     "sealMs": 0.03,
+     "bytes": 435330
+    },
+    "coldMount": {
+     "renderMs": 9.1,
+     "sealMs": 0.31
+    },
+    "update": {
+     "renderMs": 1.5,
+     "bytes": 39
+    },
+    "remove": {
+     "renderMs": 0.38,
+     "bytes": 20
+    },
+    "jsHeapAfterMountBytes": 5677079
+   },
+   "list5000MemoRows": {
+    "mount": {
+     "renderMs": 5.24,
+     "sealMs": 0.03,
+     "bytes": 435330
+    },
+    "coldMount": {
+     "renderMs": 10.8,
+     "sealMs": 0.33
+    },
+    "update": {
+     "renderMs": 0.3,
+     "bytes": 39
+    },
+    "jsHeapAfterMountBytes": 7000099
+   },
+   "flow5000": {
+    "mount": {
+     "renderMs": 4.06,
+     "sealMs": 0.03,
+     "bytes": 435332
+    },
+    "coldMount": {
+     "renderMs": 9.9,
+     "sealMs": 0.32
+    },
+    "update": {
+     "renderMs": 1.5,
+     "bytes": 39
+    },
+    "jsHeapAfterMountBytes": 5677143
+   },
+   "list1000": {
+    "mount": {
+     "renderMs": 0.64,
+     "sealMs": 0.02,
+     "bytes": 87330
+    },
+    "coldMount": {
+     "renderMs": 5.17,
+     "sealMs": 0.31
+    },
+    "update": {
+     "renderMs": 0.35,
+     "bytes": 39
+    },
+    "jsHeapAfterMountBytes": 1068350
+   }
+  }
+ }
 }

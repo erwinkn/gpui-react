@@ -137,7 +137,7 @@ impl Paragraph {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, gpui_react::ComponentProps)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Props {
     width: f32,

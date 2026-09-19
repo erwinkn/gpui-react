@@ -4,7 +4,9 @@ import type { NativeEvent, TransactionReply, Transport } from "./protocol.js"
 
 export interface WindowOptions { title?: string; width?: number; height?: number; show?: boolean }
 export interface Client {
-  send(transaction: string): void
+  /** The component kind table as JSON. */
+  schema(): string
+  send(transaction: string | Uint8Array): void
   receive(): Promise<string[]>
   close(reason: string): void
 }
@@ -15,7 +17,7 @@ export interface Bindings {
 }
 
 function verify(bindings: Bindings): void {
-  if (bindings.bridgeRuntimeVersion() !== 1) throw Error("Native bridge protocol mismatch")
+  if (bindings.bridgeRuntimeVersion() !== 2) throw Error("Native bridge protocol mismatch")
 }
 
 export class NativeTransport implements Transport {
@@ -33,7 +35,7 @@ export class NativeTransport implements Transport {
     return () => { this.receiver = undefined; this.onError = undefined }
   }
 
-  send(transaction: string): Promise<TransactionReply> {
+  send(transaction: string | Uint8Array): Promise<TransactionReply> {
     if (this.closed) return Promise.reject(this.closed)
     if (this.pending) return Promise.reject(Error("Native transport already has an in-flight transaction"))
     return new Promise((resolve, reject) => {
@@ -79,7 +81,7 @@ export function attachApplication(bindings: Bindings): BridgeRoot {
   verify(bindings)
   if (isMainThread || !workerData?.gpuiReactSession) throw Error("attachApplication requires an application worker")
   const client = new bindings.NativeClient(workerData.gpuiReactSession)
-  const root = createRoot(new NativeTransport(client))
+  const root = createRoot(new NativeTransport(client), { schema: JSON.parse(client.schema()), wire: "binary" })
   const failed = (error: unknown) => client.close(error instanceof Error ? error.message : String(error))
   process.on("uncaughtExceptionMonitor", failed)
   process.on("unhandledRejection", failed)

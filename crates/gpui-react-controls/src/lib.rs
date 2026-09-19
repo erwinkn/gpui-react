@@ -50,3 +50,25 @@ pub fn register(registry: &mut gpui_react::Registry) -> anyhow::Result<()> {
             .queries(),
     )
 }
+
+#[cfg(test)]
+mod schema {
+    /// Every control's derived wire schema must match its serde derive.
+    #[test]
+    fn schemas_match_serde() {
+        let mut registry = gpui_react::Registry::default();
+        super::register(&mut registry).unwrap();
+        registry.verify_schemas().unwrap();
+        let schema = registry.schema();
+        assert_eq!(schema.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(), ["document", "list", "container", "text", "input"]);
+        let text = &schema[3];
+        let gpui_react::Schema::Fields(fields) = text.fields else { panic!("text has a positional schema") };
+        assert_eq!(fields.iter().map(|f| f.name).collect::<Vec<_>>(), ["text", "style", "textKey", "selectable", "searchable", "matchIndexOffset", "measure"]);
+        assert!(fields.iter().all(|f| !f.required), "every text prop has a default");
+        assert_eq!(fields[1].kind, gpui_react::WireType::Style);
+        assert_eq!(fields[5].kind, gpui_react::WireType::U32);
+        let json = serde_json::to_value(&schema).unwrap();
+        assert_eq!(json[3]["fields"][0], serde_json::json!({ "name": "text", "type": "str", "required": false }));
+        assert_eq!(json[3]["capabilities"]["queries"], true);
+    }
+}

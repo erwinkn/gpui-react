@@ -5,10 +5,8 @@ use crate::{
 use gpui::{prelude::*, *};
 use gpui_react::{ElementCommands, ElementContext, ElementQueries, ReactElement, RenderContext};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    rc::{Rc, Weak},
-};
+use rustc_hash::FxHashMap;
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -19,7 +17,7 @@ pub enum Scroll {
     Y,
     Both,
 }
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, gpui_react::ComponentProps)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContainerProps {
     pub style: SharedStyle,
@@ -68,130 +66,158 @@ pub struct ContainerSnapshot {
     pub child_count: usize,
     pub focused: bool,
 }
-/// A GPUI div as a host-owned row, 32 bytes. Scroll and focus handles exist
-/// only when the props ask for them; hover and active state live in GPUI
-/// element state. Label, scroll group, focus, and painted geometry are rare
-/// and live behind one optional box.
+const BLOCK_MOUSE: u8 = 1;
+const MEASURE: u8 = 2;
+const FOCUS: u8 = 4;
+const LABEL: u8 = 8;
+const GROUP: u8 = 16;
+
+/// A GPUI div as a host-owned row, 16 bytes. Hover and active state live in
+/// GPUI element state. Scroll and focus handles, labels, scroll groups, and
+/// painted geometry exist only for the rows that ask for them and live in
+/// `ContainerExtras`, keyed by slot.
 pub struct Container {
     style: SharedStyle,
-    scroll: Option<Rc<ScrollHandle>>,
-    rare: Option<Box<Rare>>,
     revision: u32,
     scroll_mode: Scroll,
-    block_mouse: bool,
-    measure: bool,
+    flags: u8,
 }
 #[derive(Default)]
-struct Rare {
-    label: SharedString,
-    scroll_group: Option<String>,
-    focus: Option<FocusHandle>,
-    painted: Option<Painted>,
+pub struct ContainerExtras {
+    scroll: FxHashMap<u32, ScrollHandle>,
+    focus: FxHashMap<u32, FocusHandle>,
+    labels: FxHashMap<u32, SharedString>,
+    groups: FxHashMap<u32, String>,
+    painted: FxHashMap<u32, Painted>,
 }
-impl Container {
-    fn offset(&self) -> Offset {
-        let p = self.scroll.as_ref().map(|scroll| scroll.offset()).unwrap_or_default();
+impl ContainerExtras {
+    fn offset(&self, slot: u32) -> Offset {
+        let p = self.scroll.get(&slot).map(|scroll| scroll.offset()).unwrap_or_default();
         Offset {
             x: -f32::from(p.x),
             y: -f32::from(p.y),
         }
     }
-    pub fn scroll_handle(&self) -> Option<ScrollHandle> {
-        self.scroll.as_ref().map(|scroll| scroll.as_ref().clone())
+    fn focused(&self, slot: u32, window: &Window) -> bool {
+        self.focus.get(&slot).is_some_and(|focus| focus.is_focused(window))
     }
-    fn focus(&self) -> Option<&FocusHandle> {
-        self.rare.as_ref().and_then(|rare| rare.focus.as_ref())
-    }
-    fn focused(&self, window: &Window) -> bool {
-        self.focus().is_some_and(|focus| focus.is_focused(window))
-    }
-    fn label(&self) -> Option<&SharedString> {
-        self.rare
-            .as_ref()
-            .map(|rare| &rare.label)
-            .filter(|label| !label.is_empty())
-    }
-    fn group_name(&self) -> Option<&str> {
-        (self.scroll_mode == Scroll::X)
-            .then(|| self.rare.as_ref()?.scroll_group.as_deref())
-            .flatten()
-            .filter(|name| !name.is_empty())
-    }
-    fn rare(props: &ContainerProps, previous: Option<Box<Rare>>, cx: &mut ElementContext) -> Option<Box<Rare>> {
-        if props.label.is_empty() && props.scroll_group.is_none() && !props.focusable {
-            return None;
+    /// Point the row at the scroll handle its props ask for: none, a private
+    /// one, or the one shared by its scroll group in this window.
+    fn resolve_scroll(&mut self, slot: u32, props: &ContainerProps, window: &Window, cx: &mut App) {
+        self.release_group(slot, window, cx);
+        if props.scroll == Scroll::None {
+            self.scroll.remove(&slot);
+            return;
         }
-        let mut rare = previous.map(|rare| *rare).unwrap_or_default();
-        rare.label = props.label.clone().into();
-        rare.scroll_group = props.scroll_group.clone();
-        rare.focus = match (props.focusable, rare.focus.take()) {
-            (true, Some(focus)) => Some(focus),
-            (true, None) => Some(cx.cx.focus_handle()),
-            (false, _) => None,
+        let Some(name) = group_name(props) else {
+            self.scroll.insert(slot, ScrollHandle::new());
+            return;
         };
-        Some(Box::new(rare))
+        let key = (window.window_handle().window_id(), name.to_owned());
+        let (handle, count) = cx
+            .default_global::<ScrollGroups>()
+            .0
+            .entry(key)
+            .or_insert_with(|| (ScrollHandle::new(), 0));
+        *count += 1;
+        self.scroll.insert(slot, handle.clone());
+        self.groups.insert(slot, name.to_owned());
+    }
+    fn release_group(&mut self, slot: u32, window: &Window, cx: &mut App) {
+        let Some(name) = self.groups.remove(&slot) else {
+            return;
+        };
+        let groups = &mut cx.default_global::<ScrollGroups>().0;
+        let key = (window.window_handle().window_id(), name);
+        if let Some((_, count)) = groups.get_mut(&key) {
+            *count -= 1;
+            if *count == 0 {
+                groups.remove(&key);
+            }
+        }
+    }
+}
+impl Container {
+    fn flags(props: &ContainerProps, extras: &mut ContainerExtras, slot: u32, cx: &mut App) -> u8 {
+        let mut flags = (props.block_mouse as u8 * BLOCK_MOUSE) | (props.measure as u8 * MEASURE);
+        if props.label.is_empty() {
+            extras.labels.remove(&slot);
+        } else {
+            extras.labels.insert(slot, props.label.clone().into());
+            flags |= LABEL;
+        }
+        if props.focusable {
+            extras.focus.entry(slot).or_insert_with(|| cx.focus_handle());
+            flags |= FOCUS;
+        } else {
+            extras.focus.remove(&slot);
+        }
+        if extras.groups.contains_key(&slot) {
+            flags |= GROUP;
+        }
+        flags
+    }
+    fn label<'a>(&self, extras: &'a ContainerExtras, slot: u32) -> Option<&'a SharedString> {
+        (self.flags & LABEL != 0).then(|| &extras.labels[&slot])
     }
 }
 impl ReactElement for Container {
     type Props = ContainerProps;
-    fn create(props: ContainerProps, cx: &mut ElementContext) -> Self {
+    type Extras = ContainerExtras;
+    fn create(props: ContainerProps, extras: &mut ContainerExtras, cx: &mut ElementContext) -> Self {
+        extras.resolve_scroll(cx.slot, &props, cx.window, cx.cx);
         Self {
-            scroll: resolve_scroll(&props, cx.window, cx.cx),
-            rare: Self::rare(&props, None, cx),
+            flags: Self::flags(&props, extras, cx.slot, cx.cx),
             style: props.style,
             scroll_mode: props.scroll,
-            block_mouse: props.block_mouse,
-            measure: props.measure,
             revision: 0,
         }
     }
-    fn set_props(&mut self, props: ContainerProps, cx: &mut ElementContext) {
-        if !props.focusable && self.focused(cx.window) {
+    fn set_props(&mut self, props: ContainerProps, extras: &mut ContainerExtras, cx: &mut ElementContext) {
+        let slot = cx.slot;
+        if !props.focusable && extras.focused(slot, cx.window) {
             cx.window.blur();
         }
-        if props.scroll != self.scroll_mode || group_name(&props) != self.group_name() {
-            self.scroll = resolve_scroll(&props, cx.window, cx.cx);
+        let group = (self.flags & GROUP != 0).then(|| extras.groups[&slot].as_str());
+        if props.scroll != self.scroll_mode || group_name(&props) != group {
+            extras.resolve_scroll(slot, &props, cx.window, cx.cx);
         }
-        let painted = self.rare.as_ref().and_then(|rare| rare.painted);
-        self.rare = Self::rare(&props, self.rare.take(), cx);
-        if let (Some(painted), Some(rare)) = (painted, self.rare.as_mut()) {
-            rare.painted = Some(painted);
-        }
+        self.flags = Self::flags(&props, extras, slot, cx.cx);
         self.style = props.style;
         self.scroll_mode = props.scroll;
-        self.block_mouse = props.block_mouse;
-        self.measure = props.measure;
         self.revision += 1;
     }
-    fn render(&self, cx: &mut RenderContext) -> AnyElement {
+    fn render(&self, extras: &ContainerExtras, cx: &mut RenderContext) -> AnyElement {
         let id = cx.id;
+        let slot = cx.slot;
         let emitter = cx.emitter();
+        let measure = self.flags & MEASURE != 0;
         // A container needs GPUI element state only when it scrolls, focuses,
         // listens, or carries hover, active, or focus styles. Everything else
         // is a plain div with no per-frame state.
-        if self.scroll.is_none()
-            && self.rare.is_none()
+        if self.scroll_mode == Scroll::None
+            && self.flags & (FOCUS | LABEL | BLOCK_MOUSE) == 0
             && emitter.is_none()
             && !self.style.is_interactive()
-            && !self.block_mouse
         {
             let children = cx.children();
             let mut el = self.style.apply(div().flex().flex_col()).children(children);
-            if self.measure {
+            if measure {
                 el = el.on_painted(self.measure_callback(cx));
             }
             return el.into_any_element();
         }
         let mut el = div().id(cx.element_id()).flex().flex_col();
-        if let Some(label) = self.label() {
+        if let Some(label) = self.label(extras, slot) {
             el = el.aria_label(label.clone());
         }
+        let scroll = extras.scroll.get(&slot).cloned();
         let scrolls_vertically = matches!(self.scroll_mode, Scroll::Y | Scroll::Both);
-        if scrolls_vertically || self.measure {
+        if scrolls_vertically || measure {
             // GPUI keeps one paint listener per element, so vertical scroll
             // registration and measurement share it.
-            let scroll_area = scrolls_vertically.then(|| (cx.host(), self.scroll.clone().unwrap()));
-            let measure = self.measure.then(|| self.measure_callback(cx));
+            let scroll_area = scrolls_vertically.then(|| (cx.host(), scroll.clone().unwrap()));
+            let measure = measure.then(|| self.measure_callback(cx));
             el = el.on_painted(move |bounds, window, cx| {
                 if let Some((host, scroll)) = &scroll_area {
                     let scroll = scroll.clone();
@@ -223,7 +249,7 @@ impl ReactElement for Container {
                     cx,
                 )
             });
-            let scroll = self.scroll.clone();
+            let scroll = scroll.clone();
             el = el.on_scroll_wheel(move |event: &ScrollWheelEvent, window, cx| {
                 let position = event.position;
                 let delta = event.delta.pixel_delta(window.line_height());
@@ -251,13 +277,13 @@ impl ReactElement for Container {
         // BlockMouse also excludes ancestor hitboxes. A general composition
         // container keeps GPUI's normal hit testing so its parent can handle a
         // click. Native overlays can opt into block_mouse_except_scroll().
-        if self.block_mouse {
+        if self.flags & BLOCK_MOUSE != 0 {
             el = el.block_mouse_except_scroll();
         }
-        if let Some(focus) = self.focus() {
-            el = el.track_focus(focus);
+        if self.flags & FOCUS != 0 {
+            el = el.track_focus(&extras.focus[&slot]);
         }
-        if let Some(scroll) = &self.scroll {
+        if let Some(scroll) = &scroll {
             el = match self.scroll_mode {
                 Scroll::None => el,
                 Scroll::X => el
@@ -280,10 +306,16 @@ impl ReactElement for Container {
             .children(children)
             .into_any_element()
     }
-    fn unmount(&mut self, cx: &mut ElementContext) {
-        if self.focused(cx.window) {
+    fn unmount(&mut self, extras: &mut ContainerExtras, cx: &mut ElementContext) {
+        let slot = cx.slot;
+        if extras.focused(slot, cx.window) {
             cx.window.blur();
         }
+        extras.release_group(slot, cx.window, cx.cx);
+        extras.scroll.remove(&slot);
+        extras.focus.remove(&slot);
+        extras.labels.remove(&slot);
+        extras.painted.remove(&slot);
     }
 }
 impl Container {
@@ -301,11 +333,8 @@ impl Container {
                 frame: gpui_react::current_frame(window, cx),
             };
             host.update(cx, |host, _| {
-                host.update_element::<Container, _>(id, |container| {
-                    container
-                        .rare
-                        .get_or_insert_with(Default::default)
-                        .painted = Some(painted)
+                host.update_element::<Container, _>(id, |_, extras, slot| {
+                    extras.painted.insert(slot, painted);
                 });
             })
             .ok();
@@ -314,23 +343,30 @@ impl Container {
 }
 impl ElementCommands for Container {
     type Command = ContainerCommand;
-    fn command(&mut self, command: ContainerCommand, cx: &mut ElementContext) -> anyhow::Result<()> {
+    fn command(
+        &mut self,
+        command: ContainerCommand,
+        extras: &mut ContainerExtras,
+        cx: &mut ElementContext,
+    ) -> anyhow::Result<()> {
+        let slot = cx.slot;
         match command {
             ContainerCommand::Focus => {
-                let focus = self
-                    .focus()
+                let focus = extras
+                    .focus
+                    .get(&slot)
                     .ok_or_else(|| anyhow::anyhow!("container is not focusable"))?;
                 cx.window.focus(focus, cx.cx);
             }
             ContainerCommand::Blur => {
-                if self.focused(cx.window) {
+                if extras.focused(slot, cx.window) {
                     cx.window.blur();
                 }
             }
             ContainerCommand::ScrollTo { x, y } => {
-                let scroll = self
+                let scroll = extras
                     .scroll
-                    .as_ref()
+                    .get(&slot)
                     .ok_or_else(|| anyhow::anyhow!("container does not scroll"))?;
                 scroll.set_offset(point(px(-x), px(-y)));
             }
@@ -341,19 +377,21 @@ impl ElementCommands for Container {
 impl ElementQueries for Container {
     type Query = ();
     type Reply = ContainerSnapshot;
-    fn query(&mut self, _: (), cx: &mut ElementContext) -> anyhow::Result<Self::Reply> {
+    fn query(&mut self, _: (), extras: &mut ContainerExtras, cx: &mut ElementContext) -> anyhow::Result<Self::Reply> {
         Ok(ContainerSnapshot {
-            painted: self.rare.as_ref().and_then(|rare| rare.painted),
+            painted: extras.painted.get(&cx.slot).copied(),
             revision: self.revision as u64,
-            offset: self.offset(),
+            offset: extras.offset(cx.slot),
             child_count: cx.child_count,
-            focused: self.focused(cx.window),
+            focused: extras.focused(cx.slot, cx.window),
         })
     }
 }
 
+/// Horizontal scroll groups share one handle per window and group name. The
+/// count is the number of live rows pointing at the handle.
 #[derive(Default)]
-struct ScrollGroups(HashMap<(WindowId, String), Weak<ScrollHandle>>);
+struct ScrollGroups(HashMap<(WindowId, String), (ScrollHandle, u32)>);
 impl Global for ScrollGroups {}
 fn group_name(props: &ContainerProps) -> Option<&str> {
     (props.scroll == Scroll::X)
@@ -361,28 +399,11 @@ fn group_name(props: &ContainerProps) -> Option<&str> {
         .flatten()
         .filter(|name| !name.is_empty())
 }
-fn resolve_scroll(props: &ContainerProps, window: &Window, cx: &mut App) -> Option<Rc<ScrollHandle>> {
-    if props.scroll == Scroll::None {
-        return None;
-    }
-    let Some(name) = group_name(props) else {
-        return Some(Rc::new(ScrollHandle::new()));
-    };
-    let groups = &mut cx.default_global::<ScrollGroups>().0;
-    groups.retain(|_, handle| handle.strong_count() > 0);
-    let key = (window.window_handle().window_id(), name.to_owned());
-    if let Some(handle) = groups.get(&key).and_then(Weak::upgrade) {
-        return Some(handle);
-    }
-    let handle = Rc::new(ScrollHandle::new());
-    groups.insert(key, Rc::downgrade(&handle));
-    Some(handle)
-}
 
 #[cfg(test)]
 mod layout {
     #[test]
     fn container_row_stays_small() {
-        assert!(std::mem::size_of::<super::Container>() <= 32, "{}", std::mem::size_of::<super::Container>());
+        assert!(std::mem::size_of::<super::Container>() <= 16, "{}", std::mem::size_of::<super::Container>());
     }
 }

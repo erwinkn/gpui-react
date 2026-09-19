@@ -173,3 +173,17 @@ describe("React commits to the asynchronous native boundary", () => {
     expect(errors).toHaveLength(1)
   })
 })
+
+describe("Native component schema", () => {
+  it("keys kinds by name in the order native declared them", () => {
+    const transport = new RecordingTransport()
+    const capabilities = { events: false, commands: false, queries: false, children: false, view: false }
+    const root = createRoot(transport, { schema: [
+      { name: "document", capabilities, fields: null },
+      { name: "text", capabilities, fields: [{ name: "text", type: "str", required: false }] },
+    ] })
+    expect([...root.kinds!.entries()]).toEqual([["document", 0], ["text", 1]])
+    root.dispose()
+    expect(createRoot(new RecordingTransport()).kinds).toBeNull()
+  })
+})

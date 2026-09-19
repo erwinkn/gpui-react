@@ -1,9 +1,10 @@
 use crate::{SharedStyle, geometry::Painted};
 use gpui::{prelude::*, *};
 use gpui_react::{ElementContext, ElementQueries, ReactElement, RenderContext};
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, gpui_react::ComponentProps)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextProps {
     /// Decoded straight into GPUI's string type: one copy from the wire.
@@ -40,54 +41,68 @@ pub struct TextSnapshot {
 const SELECTABLE: u8 = 1;
 const SEARCHABLE: u8 = 2;
 const MEASURE: u8 = 4;
+const HAS_KEY: u8 = 8;
 const NO_OFFSET: u32 = u32::MAX;
 
-/// Native text as a host-owned row, 80 bytes. Inside a Document it takes part
+/// What only some text nodes carry, keyed by row slot: an app-defined
+/// selection key and the last painted bounds.
+#[derive(Default)]
+pub struct TextExtras {
+    keys: FxHashMap<u32, SharedString>,
+    painted: FxHashMap<u32, Painted>,
+}
+
+/// Native text as a host-owned row, 48 bytes. Inside a Document it takes part
 /// in selection and search, keyed by the app's `textKey` or by the node id.
 pub struct Text {
     text: SharedString,
-    key: Option<SharedString>,
     style: SharedStyle,
-    painted: Option<Box<Painted>>,
     match_index_offset: u32,
     revision: u32,
     flags: u8,
 }
 impl Text {
-    fn key(props: &TextProps) -> Option<SharedString> {
-        props.text_key.clone()
-    }
-    fn flags(props: &TextProps) -> u8 {
+    fn flags(props: &TextProps, extras: &mut TextExtras, slot: u32) -> u8 {
+        let key = match &props.text_key {
+            Some(key) => {
+                extras.keys.insert(slot, key.clone());
+                HAS_KEY
+            }
+            None => {
+                extras.keys.remove(&slot);
+                0
+            }
+        };
         (props.selectable as u8 * SELECTABLE)
             | (props.searchable as u8 * SEARCHABLE)
             | (props.measure as u8 * MEASURE)
+            | key
     }
 }
 impl ReactElement for Text {
     type Props = TextProps;
-    fn create(props: TextProps, _: &mut ElementContext) -> Self {
+    type Extras = TextExtras;
+    fn create(props: TextProps, extras: &mut TextExtras, cx: &mut ElementContext) -> Self {
         Self {
-            key: Self::key(&props),
-            flags: Self::flags(&props),
+            flags: Self::flags(&props, extras, cx.slot),
             match_index_offset: props.match_index_offset.unwrap_or(NO_OFFSET),
             text: props.text,
             style: props.style,
-            painted: None,
             revision: 0,
         }
     }
-    fn set_props(&mut self, props: TextProps, _: &mut ElementContext) {
-        self.key = Self::key(&props);
-        self.flags = Self::flags(&props);
+    fn set_props(&mut self, props: TextProps, extras: &mut TextExtras, cx: &mut ElementContext) {
+        self.flags = Self::flags(&props, extras, cx.slot);
         self.match_index_offset = props.match_index_offset.unwrap_or(NO_OFFSET);
         self.text = props.text;
         self.style = props.style;
         self.revision += 1;
     }
-    fn render(&self, cx: &mut RenderContext) -> AnyElement {
-        let key = match &self.key {
-            Some(name) => crate::TextKey::Named(name.clone()),
-            None => crate::TextKey::Node(cx.id),
+    fn render(&self, extras: &TextExtras, cx: &mut RenderContext) -> AnyElement {
+        let key = if self.flags & HAS_KEY != 0 {
+            crate::TextKey::Named(extras.keys[&cx.slot].clone())
+        } else {
+            crate::TextKey::Node(cx.id)
         };
         let mut text = crate::document_text(key, self.text.clone())
             .selectable(self.flags & SELECTABLE != 0)
@@ -117,8 +132,8 @@ impl ReactElement for Text {
                         frame: gpui_react::current_frame(window, cx),
                     };
                     host.update(cx, |host, _| {
-                        host.update_element::<Text, _>(id, |text| {
-                            text.painted = Some(Box::new(painted))
+                        host.update_element::<Text, _>(id, |_, extras, slot| {
+                            extras.painted.insert(slot, painted);
                         });
                     })
                     .ok();
@@ -128,15 +143,19 @@ impl ReactElement for Text {
         }
         element
     }
+    fn unmount(&mut self, extras: &mut TextExtras, cx: &mut ElementContext) {
+        extras.keys.remove(&cx.slot);
+        extras.painted.remove(&cx.slot);
+    }
 }
 impl ElementQueries for Text {
     type Query = ();
     type Reply = TextSnapshot;
-    fn query(&mut self, _: (), _: &mut ElementContext) -> anyhow::Result<Self::Reply> {
+    fn query(&mut self, _: (), extras: &mut TextExtras, cx: &mut ElementContext) -> anyhow::Result<Self::Reply> {
         Ok(TextSnapshot {
             text: self.text.to_string(),
             revision: self.revision,
-            painted: self.painted.as_deref().copied(),
+            painted: extras.painted.get(&cx.slot).copied(),
         })
     }
 }
@@ -145,6 +164,6 @@ impl ElementQueries for Text {
 mod layout {
     #[test]
     fn text_row_stays_small() {
-        assert!(std::mem::size_of::<super::Text>() <= 80, "{}", std::mem::size_of::<super::Text>());
+        assert!(std::mem::size_of::<super::Text>() <= 48, "{}", std::mem::size_of::<super::Text>());
     }
 }

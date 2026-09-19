@@ -1665,7 +1665,7 @@ pub fn word_range(text: &str, ix: usize) -> Range<usize> {
     start..end
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, gpui_react::ComponentProps)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct InputProps {
     /// Read only at construction. Later props never echo text into the native buffer.

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use std::{cell::Cell, rc::Rc};
 use support::*;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, gpui_react::ComponentProps)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Props {
     width: f32,

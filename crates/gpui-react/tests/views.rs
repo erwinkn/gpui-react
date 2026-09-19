@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, gpui_react::ComponentProps)]
 #[serde(deny_unknown_fields)]
 struct Props {
     step: u32,

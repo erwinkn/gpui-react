@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, gpui_react::ComponentProps)]
 struct Props {
     revision: u64,
     width: f32,

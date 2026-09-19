@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, gpui_react::ComponentProps)]
 #[serde(deny_unknown_fields)]
 struct Props {
     value: u32,
@@ -81,13 +81,14 @@ impl ReactCommands for View {
 struct Boxed(u32);
 impl ReactElement for Boxed {
     type Props = Props;
-    fn create(props: Props, _: &mut ElementContext) -> Self {
+    type Extras = ();
+    fn create(props: Props, _: &mut (), _: &mut ElementContext) -> Self {
         Self(props.value)
     }
-    fn set_props(&mut self, props: Props, _: &mut ElementContext) {
+    fn set_props(&mut self, props: Props, _: &mut (), _: &mut ElementContext) {
         self.0 = props.value;
     }
-    fn render(&self, cx: &mut RenderContext) -> AnyElement {
+    fn render(&self, _: &(), cx: &mut RenderContext) -> AnyElement {
         let children = cx.children();
         div().id(cx.element_id()).children(children).into_any_element()
     }
@@ -95,7 +96,7 @@ impl ReactElement for Boxed {
 impl ElementQueries for Boxed {
     type Query = ();
     type Reply = Value;
-    fn query(&mut self, _: (), cx: &mut ElementContext) -> anyhow::Result<Value> {
+    fn query(&mut self, _: (), _: &mut (), cx: &mut ElementContext) -> anyhow::Result<Value> {
         Ok(json!({"value": self.0, "childCount": cx.child_count}))
     }
 }

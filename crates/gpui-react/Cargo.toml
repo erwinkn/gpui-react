@@ -9,6 +9,7 @@ description = "Small asynchronous React bindings for ordinary GPUI views"
 
 [dependencies]
 gpui = { path = "../../zed/crates/gpui", default-features = false, features = ["font-kit"] }
+gpui-react-macros = { path = "../gpui-react-macros" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 anyhow = "1"

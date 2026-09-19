@@ -8,6 +8,7 @@
 use crate::{
     registry::{Kind, Op, Payload, Prepared, Registry},
     style::{STYLES, Style},
+    wire,
 };
 use anyhow::Result;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -34,6 +35,26 @@ impl Decoder {
     }
     /// Decode transaction text into typed operations.
     pub fn parse(&mut self, json: &str) -> Result<Prepared> {
+        self.with_styles(|registry| {
+            let mut deserializer = serde_json::Deserializer::from_str(json);
+            let prepared = TransactionSeed(registry).deserialize(&mut deserializer)?;
+            deserializer.end()?;
+            Ok(prepared)
+        })
+    }
+    /// Decode a binary transaction into typed operations. See `wire`.
+    pub fn parse_binary(&mut self, bytes: &[u8]) -> Result<Prepared> {
+        self.with_styles(|registry| {
+            let mut reader = wire::Reader::new(bytes)?;
+            let prepared = read_transaction(registry, &mut reader)?;
+            if !reader.finished() {
+                anyhow::bail!("wire transaction has trailing bytes");
+            }
+            Ok(prepared)
+        })
+    }
+    /// Runs a decode with this session's style definitions installed.
+    fn with_styles<R>(&mut self, decode: impl FnOnce(&Registry) -> R) -> R {
         struct Installed<'a>(&'a mut Vec<Option<Arc<Style>>>);
         impl Drop for Installed<'_> {
             fn drop(&mut self) {
@@ -42,11 +63,116 @@ impl Decoder {
         }
         STYLES.with(|cell| std::mem::swap(&mut *cell.borrow_mut(), &mut self.styles));
         let _installed = Installed(&mut self.styles);
-        let mut deserializer = serde_json::Deserializer::from_str(json);
-        let prepared = TransactionSeed(&self.registry).deserialize(&mut deserializer)?;
-        deserializer.end()?;
-        Ok(prepared)
+        decode(&self.registry)
     }
+}
+
+/// Records or drops a style definition in the installed session table.
+fn install_style(id: u32, definition: Option<Arc<Style>>) -> Result<(), &'static str> {
+    STYLES.with(|styles| {
+        let mut styles = styles.borrow_mut();
+        let slot = id as usize;
+        if slot >= styles.len() {
+            if definition.is_none() {
+                return Ok(());
+            }
+            if slot > styles.len() + 4096 {
+                return Err("style id skips too far");
+            }
+            styles.resize(slot + 1, None);
+        }
+        styles[slot] = definition;
+        Ok(())
+    })
+}
+
+fn read_transaction(registry: &Registry, reader: &mut wire::Reader<'_>) -> Result<Prepared> {
+    use serde::Deserialize as _;
+    if reader.u8()? != 1 {
+        anyhow::bail!("unsupported protocol version");
+    }
+    let sequence = reader.u32()? as u64;
+    let count = reader.u32()? as usize;
+    let mut operations = Vec::with_capacity(count.min(1 << 20));
+    let kinds = registry.len() as u16;
+    let component = |reader: &mut wire::Reader<'_>| -> Result<u16> {
+        let kind = reader.u16()?;
+        anyhow::ensure!(kind < kinds, "unknown component kind {kind}");
+        Ok(kind)
+    };
+    for _ in 0..count {
+        let tag = reader.u8()?;
+        let operation = match tag {
+            1 => {
+                let id = reader.u32()?;
+                let kind = component(reader)?;
+                let subscription = reader.id()?.map(u64::from);
+                let parent = reader.u32()?;
+                let before = reader.id()?;
+                let props = registry.binding(kind).decode_wire(Kind::Props, reader)?;
+                Op::Create {
+                    id,
+                    kind,
+                    props,
+                    subscription,
+                    place: match parent {
+                        wire::NONE => None,
+                        wire::NULL => Some((None, before)),
+                        parent => Some((Some(parent), before)),
+                    },
+                }
+            }
+            2 => {
+                let id = reader.u32()?;
+                let kind = component(reader)?;
+                let props = registry.binding(kind).decode_wire(Kind::Props, reader)?;
+                Op::Props { id, kind, props }
+            }
+            3 => Op::Listen {
+                id: reader.u32()?,
+                subscription: reader.id()?.map(u64::from),
+            },
+            4 => Op::Place {
+                parent: reader.id()?,
+                child: reader.u32()?,
+                before: reader.id()?,
+            },
+            5 => Op::Remove { id: reader.u32()? },
+            6 => Op::Hidden {
+                id: reader.u32()?,
+                hidden: reader.u8()? != 0,
+            },
+            7 | 8 => {
+                let id = reader.u32()?;
+                let kind = component(reader)?;
+                let request = reader.u32()? as u64;
+                let command = tag == 7;
+                let value = registry
+                    .binding(kind)
+                    .decode_wire(if command { Kind::Command } else { Kind::Query }, reader);
+                // A schema failure inside a value leaves the stream position
+                // undefined, so it fails the transaction here rather than
+                // becoming a request error.
+                if value.is_err() {
+                    anyhow::bail!("wire {} value failed to decode", if command { "command" } else { "query" });
+                }
+                Op::Call { id, kind, request, command, value }
+            }
+            9 => {
+                let id = reader.u32()?;
+                let style = Style::deserialize(&mut *reader)?;
+                install_style(id, Some(Arc::new(style))).map_err(anyhow::Error::msg)?;
+                continue;
+            }
+            10 => {
+                install_style(reader.u32()?, None).map_err(anyhow::Error::msg)?;
+                continue;
+            }
+            tag => anyhow::bail!("unknown wire operation tag {tag}"),
+        };
+        operations.push(operation);
+    }
+    Ok(Prepared { sequence, operations })
 }
 
 fn expecting(f: &mut fmt::Formatter, what: &str) -> fmt::Result {
@@ -226,21 +352,7 @@ impl<'de> Visitor<'de> for OperationSeed<'_> {
             } else {
                 None
             };
-            STYLES.with(|styles| {
-                let mut styles = styles.borrow_mut();
-                let slot = id as usize;
-                if slot >= styles.len() {
-                    if definition.is_none() {
-                        return Ok(());
-                    }
-                    if slot > styles.len() + 4096 {
-                        return Err(de::Error::custom("style id skips too far"));
-                    }
-                    styles.resize(slot + 1, None);
-                }
-                styles[slot] = definition;
-                Ok(())
-            })?;
+            install_style(id, definition).map_err(de::Error::custom)?;
             return Ok(None);
         }
         let call = |command: bool| -> Result<Op, A::Error> {
@@ -307,5 +419,102 @@ impl Visitor<'_> for ComponentSeed<'_> {
     }
     fn visit_str<E: de::Error>(self, value: &str) -> Result<u16, E> {
         self.0.kind(value).map_err(de::Error::custom)
+    }
+}
+
+/// Both wires must decode a real mount into the same typed operations. The
+/// payloads are what the JavaScript bridge sealed for the frame-cost scene
+/// (`fixtures/bridge-counter/js-wire-dump.tsx`); the props types here mirror
+/// the controls' field lists exactly, because the binary wire is positional.
+/// The test is skipped when the dumps are absent.
+#[cfg(test)]
+mod wire_equivalence {
+    use super::Decoder;
+    use crate::{
+        ElementContext, ReactElement, RenderContext,
+        registry::{HostElement, Op, Payload, Registry},
+        style::SharedStyle,
+    };
+    use gpui::{AnyElement, IntoElement as _, ParentElement as _};
+    use serde::Deserialize;
+    use serde_json::Value;
+
+    macro_rules! mirror {
+        ($name:ident { $($field:ident: $ty:ty),* $(,)? }) => {
+            #[derive(Debug, Default, Deserialize, gpui_react_macros::ComponentProps)]
+            #[wire(crate = "crate")]
+            #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+            #[allow(dead_code)]
+            struct $name { $($field: $ty),* }
+            impl ReactElement for $name {
+                type Props = $name;
+                type Extras = ();
+                fn create(props: $name, _: &mut (), _: &mut ElementContext) -> Self { props }
+                fn set_props(&mut self, _: $name, _: &mut (), _: &mut ElementContext) {}
+                fn render(&self, _: &(), _: &mut RenderContext) -> AnyElement { gpui::div().child("").into_any_element() }
+            }
+        };
+    }
+    mirror!(Document { style: SharedStyle, search: Option<Value>, selection_color: Option<Value> });
+    mirror!(List { style: SharedStyle, item_count: Option<usize>, window_start: usize, estimated_item_height: Option<f32>, overdraw: Option<f32>, alignment: Value, follow_tail: bool });
+    mirror!(Container { style: SharedStyle, scroll: Value, focusable: bool, label: String, scroll_group: Option<String>, block_mouse: bool, measure: bool });
+    mirror!(Text { text: String, style: SharedStyle, text_key: Option<String>, selectable: bool, searchable: bool, match_index_offset: Option<u32>, measure: bool });
+    mirror!(Input { initial_value: String, initial_multiline: bool, placeholder: String, label: String, read_only: bool, min_rows: Option<usize>, max_rows: Option<usize>, submit_on_enter: bool, capture_keys: Value, style: SharedStyle, caret_color: Option<Value>, selection_color: Option<Value> });
+
+    fn decoder() -> Decoder {
+        let mut registry = Registry::default();
+        registry.register(HostElement::<Document>::new("document").children()).unwrap();
+        registry.register(HostElement::<List>::new("list").children()).unwrap();
+        registry.register(HostElement::<Container>::new("container").children()).unwrap();
+        registry.register(HostElement::<Text>::new("text")).unwrap();
+        registry.register(HostElement::<Input>::new("input")).unwrap();
+        Decoder::new(registry)
+    }
+    fn props(kind: u16, payload: &Payload) -> String {
+        match kind {
+            0 => format!("{:?}", payload.downcast_ref::<Document>().unwrap()),
+            1 => format!("{:?}", payload.downcast_ref::<List>().unwrap()),
+            2 => format!("{:?}", payload.downcast_ref::<Container>().unwrap()),
+            3 => format!("{:?}", payload.downcast_ref::<Text>().unwrap()),
+            _ => format!("{:?}", payload.downcast_ref::<Input>().unwrap()),
+        }
+    }
+    fn describe(op: &Op) -> String {
+        match op {
+            Op::Create { id, kind, props: p, subscription, place } => format!("create {id} {kind} {subscription:?} {place:?} {}", props(*kind, p)),
+            Op::Props { id, kind, props: p } => format!("props {id} {kind} {}", props(*kind, p)),
+            Op::Listen { id, subscription } => format!("listen {id} {subscription:?}"),
+            Op::Place { parent, child, before } => format!("place {parent:?} {child} {before:?}"),
+            Op::Remove { id } => format!("remove {id}"),
+            Op::Hidden { id, hidden } => format!("hidden {id} {hidden}"),
+            Op::Call { id, kind, request, command, .. } => format!("call {id} {kind} {request} {command}"),
+        }
+    }
+
+    #[test]
+    fn binary_and_json_wires_decode_alike() {
+        let dir = std::env::var("GPUI_REACT_WIRE_DIR").unwrap_or_else(|_| "/tmp/gpui-react-wire".into());
+        for scene in ["flow", "list"] {
+            let Ok(json) = std::fs::read_to_string(format!("{dir}/mount-{scene}-1000.json")) else {
+                eprintln!("skipped: no wire dump in {dir}");
+                return;
+            };
+            let bytes = std::fs::read(format!("{dir}/mount-{scene}-1000.bin")).unwrap();
+            let (mut from_json, mut from_binary) = (decoder(), decoder());
+            let a = from_json.parse(&json).unwrap();
+            let b = from_binary.parse_binary(&bytes).unwrap();
+            assert_eq!(a.sequence, b.sequence);
+            assert_eq!(a.operations.len(), b.operations.len());
+            assert!(a.operations.len() > 1000);
+            for (x, y) in a.operations.iter().zip(&b.operations) {
+                assert_eq!(describe(x), describe(y));
+            }
+            assert!(a.operations.iter().any(|op| matches!(op, Op::Create { kind: 3, .. })));
+            assert_eq!(from_json.styles.len(), from_binary.styles.len());
+            assert!(from_json.styles.len() >= 3);
+            for (x, y) in from_json.styles.iter().zip(&from_binary.styles) {
+                assert_eq!(x.as_deref(), y.as_deref());
+            }
+        }
     }
 }

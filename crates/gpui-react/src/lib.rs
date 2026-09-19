@@ -10,6 +10,7 @@ mod frame;
 mod host;
 pub mod protocol;
 mod registry;
+pub mod wire;
 pub mod style;
 
 pub use decode::Decoder;
@@ -17,9 +18,12 @@ pub use frame::{FrameInfo, current_frame};
 pub use gpui;
 pub use host::{Children, ElementContext, Host, RenderContext};
 pub use registry::{
-    Capabilities, Component, Emission, Emitter, EventSink, HostElement, Prepared, Registry,
+    Capabilities, Component, Emission, Emitter, EventSink, HostElement, KindSchema, Prepared,
+    Registry,
 };
 pub use style::{Color, Length, SharedStyle, Style};
+pub use gpui_react_macros::ComponentProps;
+pub use wire::{Field, Schema, WireType};
 
 use gpui::{AnyElement, Context, EventEmitter, Render, Window};
 use serde::{Serialize, de::DeserializeOwned};
@@ -31,7 +35,7 @@ use serde::{Serialize, de::DeserializeOwned};
 /// removals. Preserve native interaction state unless the props explicitly
 /// request a replacement. Call `cx.notify()` when the update changes rendering.
 pub trait ReactView: Render {
-    type Props: DeserializeOwned + Send + 'static;
+    type Props: DeserializeOwned + wire::ComponentProps + Send + 'static;
 
     fn create(props: Self::Props, window: &mut Window, cx: &mut Context<Self>) -> Self;
     fn set_props(&mut self, props: Self::Props, window: &mut Window, cx: &mut Context<Self>);
@@ -89,21 +93,35 @@ pub trait ReactChildren: ReactView {
 /// Interaction state that GPUI keeps by element id (hover, scroll offsets)
 /// persists because `RenderContext::element_id` is stable for the node.
 pub trait ReactElement: 'static {
-    type Props: DeserializeOwned + Send + 'static;
+    type Props: DeserializeOwned + wire::ComponentProps + Send + 'static;
+    /// Sparse per-kind storage for what only some nodes have, keyed by the
+    /// row's slot (`cx.slot`): handles, labels, measured geometry. The row
+    /// itself stays small and dense. Use `()` when nothing is rare.
+    type Extras: Default + 'static;
 
-    fn create(props: Self::Props, cx: &mut ElementContext) -> Self;
-    fn set_props(&mut self, props: Self::Props, cx: &mut ElementContext);
-    fn render(&self, cx: &mut RenderContext) -> AnyElement;
-    fn unmount(&mut self, _cx: &mut ElementContext) {}
+    fn create(props: Self::Props, extras: &mut Self::Extras, cx: &mut ElementContext) -> Self;
+    fn set_props(&mut self, props: Self::Props, extras: &mut Self::Extras, cx: &mut ElementContext);
+    fn render(&self, extras: &Self::Extras, cx: &mut RenderContext) -> AnyElement;
+    fn unmount(&mut self, _extras: &mut Self::Extras, _cx: &mut ElementContext) {}
 }
 
 pub trait ElementCommands: ReactElement {
     type Command: DeserializeOwned + Send + 'static;
-    fn command(&mut self, command: Self::Command, cx: &mut ElementContext) -> anyhow::Result<()>;
+    fn command(
+        &mut self,
+        command: Self::Command,
+        extras: &mut Self::Extras,
+        cx: &mut ElementContext,
+    ) -> anyhow::Result<()>;
 }
 
 pub trait ElementQueries: ReactElement {
     type Query: DeserializeOwned + Send + 'static;
     type Reply: Serialize;
-    fn query(&mut self, query: Self::Query, cx: &mut ElementContext) -> anyhow::Result<Self::Reply>;
+    fn query(
+        &mut self,
+        query: Self::Query,
+        extras: &mut Self::Extras,
+        cx: &mut ElementContext,
+    ) -> anyhow::Result<Self::Reply>;
 }

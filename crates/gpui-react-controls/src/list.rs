@@ -11,7 +11,7 @@ pub enum Alignment {
     Top,
     Bottom,
 }
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, gpui_react::ComponentProps)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListProps {
     pub style: SharedStyle,

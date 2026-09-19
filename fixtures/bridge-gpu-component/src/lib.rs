@@ -21,7 +21,7 @@ fn color<'de, D: Deserializer<'de>>(d: D) -> Result<[f64; 4], D::Error> {
     Ok(value)
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, gpui_react::ComponentProps)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextureProps {
     pub style: SharedStyle,

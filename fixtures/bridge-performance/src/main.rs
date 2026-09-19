@@ -85,23 +85,37 @@ fn row_text(ix: usize) -> String {
 fn bridge_text(text: String, style: u32) -> Value {
     json!({"text":text,"style":style})
 }
-fn encoded(mode: &str, count: usize, virtualized: bool) -> String {
+/// The mount transaction. With `FRAME_BENCH_WIRE_DIR` set, both bridge modes
+/// read what the JavaScript bridge sealed for this scene (see
+/// `fixtures/bridge-counter/js-wire-dump.tsx`); otherwise the JSON is built here.
+fn encoded(mode: &str, count: usize, virtualized: bool) -> Vec<u8> {
+    if let Ok(dir) = std::env::var("FRAME_BENCH_WIRE_DIR") {
+        if mode == "bridge" || mode == "binary" {
+            let scene = if virtualized { "list" } else { "flow" };
+            let extension = if mode == "binary" { "bin" } else { "json" };
+            let path = format!("{dir}/mount-{scene}-{count}.{extension}");
+            return std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        }
+    } else if mode == "binary" {
+        panic!("binary mode needs FRAME_BENCH_WIRE_DIR");
+    }
     if mode == "bridge" {
         let mut ops = vec![
             json!({"op":"style","id":0,"style":{"width":WIDTH,"height":HEIGHT,"fontSize":14,"lineHeight":ROW,"color":"white","background":"#101010"}}),
             json!({"op":"style","id":1,"style":{"width":WIDTH,"height":HEADER,"shrink":0}}),
             json!({"op":"style","id":2,"style":{"width":WIDTH,"height":ROW,"shrink":0}}),
             json!({"op":"style","id":3,"style":{"width":WIDTH,"height":HEIGHT-HEADER,"shrink":0}}),
-            json!({"op":"create","id":1,"component":std::env::var("BRIDGE_ROOT").unwrap_or_else(|_| "document".into()),"props":{"style":0},"parent":null}),
-            json!({"op":"create","id":2,"component":"text","props":bridge_text("Status 0".into(),1),"parent":1}),
-            json!({"op":"create","id":3,"component":if virtualized {"list"} else {"container"},"props":if virtualized {json!({"estimatedItemHeight":ROW,"style":3})} else {json!({"scroll":"y","style":3})},"parent":1}),
+            // Ids follow the JavaScript bridge: the root is 0, the header 1, the list 2.
+            json!({"op":"create","id":0,"component":std::env::var("BRIDGE_ROOT").unwrap_or_else(|_| "document".into()),"props":{"style":0},"parent":null}),
+            json!({"op":"create","id":1,"component":"text","props":bridge_text("Status 0".into(),1),"parent":0}),
+            json!({"op":"create","id":2,"component":if virtualized {"list"} else {"container"},"props":if virtualized {json!({"estimatedItemHeight":ROW,"style":3})} else {json!({"scroll":"y","style":3})},"parent":0}),
         ];
         for ix in 0..count {
-            ops.push(json!({"op":"create","id":ix+4,"component":"text","props":bridge_text(row_text(ix),2),"parent":3}));
+            ops.push(json!({"op":"create","id":ix+3,"component":"text","props":bridge_text(row_text(ix),2),"parent":2}));
         }
-        json!({"version":1,"sequence":1,"operations":ops}).to_string()
+        json!({"version":1,"sequence":1,"operations":ops}).to_string().into_bytes()
     } else {
-        String::new()
+        Vec::new()
     }
 }
 enum Engine {
@@ -116,7 +130,7 @@ impl Engine {
         mode: &str,
         count: usize,
         virtualized: bool,
-        source: &str,
+        source: &[u8],
         window: &mut Window,
         cx: &mut App,
     ) -> Self {
@@ -131,19 +145,28 @@ impl Engine {
                     virtualized,
                 }
             })),
-            "bridge" => {
+            "bridge" | "binary" => {
                 let mut registry = Registry::default();
                 gpui_react_controls::register(&mut registry).unwrap();
                 let host = cx.new(|_| Host::new(registry, Arc::new(|_| {})));
+                let binary = mode == "binary";
                 let started = Instant::now();
-                let floor = if std::env::var_os("BRIDGE_MOUNT_PHASES").is_some() {
-                    let _: serde::de::IgnoredAny = serde_json::from_str(source).unwrap();
+                let floor = if std::env::var_os("BRIDGE_MOUNT_PHASES").is_some() && !binary {
+                    let _: serde::de::IgnoredAny = serde_json::from_slice(source).unwrap();
                     Some(started.elapsed())
                 } else {
                     None
                 };
                 let started = Instant::now();
-                let prepared = host.update(cx, |host, _| host.decode(source)).unwrap();
+                let prepared = host
+                    .update(cx, |host, _| {
+                        if binary {
+                            host.decode_binary(source)
+                        } else {
+                            host.decode(std::str::from_utf8(source).unwrap())
+                        }
+                    })
+                    .unwrap();
                 let decoded = started.elapsed();
                 host.update(cx, |host, cx| host.apply_prepared(prepared, window, cx))
                     .unwrap();
@@ -158,7 +181,7 @@ impl Engine {
                 }
                 Self::Bridge { host, sequence: 1 }
             }
-            _ => panic!("mode must be raw or bridge"),
+            _ => panic!("mode must be raw, bridge, or binary"),
         }
     }
     fn view(&self) -> AnyView {
@@ -175,7 +198,7 @@ impl Engine {
                 // following draw re-renders nothing.
                 return json!({"version":1,"sequence":sequence,"operations":[]}).to_string();
             }
-            json!({"version":1,"sequence":sequence,"operations":[{"op":"props","id":2,"component":"text","props":bridge_text(text.into(),1)}]}).to_string()
+            json!({"version":1,"sequence":sequence,"operations":[{"op":"props","id":1,"component":"text","props":bridge_text(text.into(),1)}]}).to_string()
         } else {
             text.to_owned()
         }
@@ -197,7 +220,7 @@ impl Engine {
     fn removal_wire(&mut self) -> String {
         if let Self::Bridge { sequence, .. } = self {
             *sequence += 1;
-            json!({"version":1,"sequence":sequence,"operations":[{"op":"remove","id":1}]})
+            json!({"version":1,"sequence":sequence,"operations":[{"op":"remove","id":0}]})
                 .to_string()
         } else {
             String::new()
@@ -310,6 +333,14 @@ impl Drop for NativeWindow {
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     let mode = args.get(1).expect("mode");
+    if mode == "schema" {
+        // The controls' kind table as JSON, for worker-side tools that encode
+        // the binary wire without a native session.
+        let mut registry = Registry::default();
+        gpui_react_controls::register(&mut registry).unwrap();
+        println!("{}", serde_json::to_string(&registry.schema()).unwrap());
+        return;
+    }
     let count: usize = args.get(3).expect("count").parse().unwrap();
     let virtualized = args.get(2).expect("flow or list") == "list";
     let source = encoded(mode, count, virtualized);

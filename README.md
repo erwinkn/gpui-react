@@ -61,6 +61,52 @@ Use `ReactElement` for stateless or element-id based elements that do not need a
 - `ElementCommands`: Receives asynchronous commands from React refs.
 - `ElementQueries`: Returns asynchronous query replies from React refs.
 
+### Props and the Wire
+
+Every `Props` type derives `Deserialize` and `ComponentProps`:
+
+```rust
+#[derive(Default, Deserialize, gpui_react::ComponentProps)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct CounterProps {
+    pub step: u32,
+    pub label: Option<String>,
+    pub style: SharedStyle,
+}
+```
+
+`ComponentProps` reads the same serde attributes (`default`, `rename`,
+`rename_all = "camelCase"`, `skip`) and declares the props schema to the
+worker: field names, wire types, and which fields are required. Native is the
+source of truth; the worker receives the kind table from `NativeClient.schema()`
+at attach and encodes props by name from it. `Registry::verify_schemas()`
+checks every derived schema against serde's view of the struct, and the
+controls test suite runs it.
+
+Wire types follow the Rust field type: `bool`; `i32`, `u32` (`usize` and
+`u64` travel as `u32`); `f32`, `f64`; `String` and `SharedString`;
+`SharedStyle` as an interned style id; anything else, including unit enums,
+`Vec`, and nested structs, as a self-describing value. A field is required
+unless the struct or the field has `#[serde(default)]` or the type is
+`Option`. `flatten`, tagged enums, and other `rename_all` casings are
+rejected at compile time.
+
+Transactions cross as a binary payload written during React's commit: kind
+indices, ids, a presence mask, then the declared fields in schema order, with no
+keys. Props the schema does not declare are not sent; in development the
+worker warns once per component and prop. Integers must be integers in range
+and floats finite, or the root fails with the component and field name. A
+missing required prop fails the root the same way. Native decodes positionally
+into the props struct's own `Deserialize` derive, so defaults, renames, and
+custom field deserializers apply unchanged.
+
+`createRoot(transport, options)` accepts `schema` (the kind table),
+`wire: "json" | "binary"` (default `"json"`; `attachApplication` uses
+`"binary"`), and `wireChecks` (number checks, on by default). `Transport.send`
+receives a string on the JSON wire and a `Uint8Array` on the binary wire that
+is valid until the send settles. `decodeWire(bytes, schema)` rebuilds operation
+objects for tests and tools. The native runtime version is 2.
+
 ## Building and Testing
 
 ### Prerequisites
@@ -191,11 +237,18 @@ CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
 
 ### JavaScript Worker Benchmark
 
-Measure React render, reconciliation, JSON serialization, and heap sizes on the worker:
+Measure React render and commit, sealing to the wire, wire size, and heap on the
+worker. Use React's production build; the development build doubles the render:
 
 ```sh
-bun fixtures/bridge-counter/js-bench.tsx 1000 list 3
+/tmp/gpui-react-target/release/gpui-react-frame-cost schema > /tmp/gpui-react-wire/schema.json
+NODE_ENV=production BRIDGE_WIRE=binary bun fixtures/bridge-counter/js-bench.tsx 5000 list 5
 ```
+
+`BRIDGE_WIRE` selects `json` or `binary`. For sub-millisecond comparisons,
+`BENCH_BALLAST=32` and `BENCH_NO_PARSE=1` keep the collector's pacing out of
+the numbers; `BENCH_HOIST=1`, `BENCH_MEMO=1`, `BENCH_UPDATES=<n>`, and
+`BENCH_TRACE=1` are described in the file header.
 
 - Raw Data: [`docs/benchmarks/bridge-js-cost.json`](./docs/benchmarks/bridge-js-cost.json)
 

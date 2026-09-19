@@ -1,8 +1,10 @@
 import React, { createContext, createElement, type ReactNode, type Ref } from "react"
 import ReactReconciler from "react-reconciler"
 import { ConcurrentRoot, DefaultEventPriority } from "react-reconciler/constants.js"
-import type { NativeEvent, NativeProps, NativeRef, Operation, Transaction, TransactionReply, Transport } from "./protocol.js"
-export type { FrameInfo, NativeEvent, NativeRef, Operation, Transaction, TransactionReply, Transport } from "./protocol.js"
+import type { KindSchema, NativeEvent, NativeRef, TransactionReply, Transport } from "./protocol.js"
+import { BinaryEncoder, JsonEncoder, validate, type Encoded, type Encoder } from "./wire.js"
+export type { FrameInfo, KindSchema, NativeEvent, NativeRef, Operation, Transaction, TransactionReply, Transport, WireField, WireType } from "./protocol.js"
+export { decodeWire } from "./wire.js"
 
 export function nativeComponent<Props extends object, Event = never, Command = unknown, Query = unknown, Reply = unknown>(name: string) {
   if (!/^[a-z0-9-]+$/.test(name)) throw Error("Invalid native component name")
@@ -11,12 +13,24 @@ export function nativeComponent<Props extends object, Event = never, Command = u
   }
 }
 
-interface Options { maxPending?: number; maxBytes?: number; onError?: (error: Error) => void }
+interface Options {
+  maxPending?: number
+  maxBytes?: number
+  onError?: (error: Error) => void
+  /** The native component table, from `NativeClient.schema()`. Absent for transports without one. */
+  schema?: KindSchema[]
+  /** Transaction encoding. The binary wire needs the schema. */
+  wire?: "json" | "binary"
+  /** Binary wire: check integers and finite floats before writing. On by default; the cost is within noise. */
+  wireChecks?: boolean
+}
 type Props = Record<string, any>
 type PendingCall = { resolve: (value: any) => void; reject: (error: Error) => void }
 interface Host {
   id: number
   component: string
+  /** Index into the native kind table, or -1 without a schema. */
+  kind: number
   props: Props
   root: BridgeRoot
   initial: Host[]
@@ -40,7 +54,6 @@ export class BridgeRoot {
   private nextSubscription = 0
   private nextRequest = 0
   private sequence = 0
-  private operations: Operation[] = []
   private scheduled = false
   private pending = 0
   private bytes = 0
@@ -56,9 +69,19 @@ export class BridgeRoot {
   private maxPending: number
   private maxBytes: number
   private onError: (error: Error) => void
+  /** Kind index by component name, when the transport supplied a schema. */
+  readonly kinds: ReadonlyMap<string, number> | null
+  readonly wire: "json" | "binary"
+  /** Commit hooks record through this after `ready()`. */
+  readonly encoder: Encoder
 
   constructor(private transport: Transport, options: Options = {}) {
     if (attached.has(transport)) throw Error("Transport already has a React root")
+    this.kinds = options.schema ? new Map(options.schema.map((kind, index) => [kind.name, index])) : null
+    this.wire = options.wire ?? "json"
+    if (this.wire !== "json" && !options.schema) throw Error("The binary wire needs the native component schema")
+    const styleId = (style: object) => this.styleId(style)
+    this.encoder = this.wire === "binary" ? new BinaryEncoder(options.schema!, styleId, options.wireChecks ?? true) : new JsonEncoder(styleId)
     this.maxPending = options.maxPending ?? 256
     this.maxBytes = options.maxBytes ?? 4 * 1024 * 1024
     if (!Number.isSafeInteger(this.maxPending) || this.maxPending < 1 || !Number.isSafeInteger(this.maxBytes) || this.maxBytes < 1) throw Error("Invalid queue limits")
@@ -108,7 +131,7 @@ export class BridgeRoot {
     if (this.disposed) return
     this.disposed = true
     reconciler.flushSyncFromReconciler(() => reconciler.updateContainer(null, this.container, null, null))
-    this.operations = []
+    this.encoder.reset()
     this.unsubscribe()
     this.callbacks.clear()
     const error = this.failure ?? Error(reason)
@@ -127,7 +150,7 @@ export class BridgeRoot {
   private fail(reason: unknown): void {
     if (this.failure) return
     this.failure = reason instanceof Error ? reason : Error(String(reason))
-    this.operations = []
+    this.encoder.reset()
     for (const call of this.calls.values()) call.reject(this.failure)
     this.calls.clear()
     for (const waiter of this.flushWaiters) waiter.reject(this.failure)
@@ -145,10 +168,10 @@ export class BridgeRoot {
     try { callback.fn(event.payload) } catch (error) { this.onError(error instanceof Error ? error : Error(String(error))) }
   }
 
-  record(operation: Operation): void {
-    if (this.disposed) return
+  /** Whether a commit hook may record now. Schedules the seal. */
+  ready(): boolean {
+    if (this.disposed) return false
     this.check()
-    this.operations.push(operation)
     if (!this.scheduled) {
       this.scheduled = true
       // Seal after synchronous layout effects and their native commands.
@@ -157,19 +180,17 @@ export class BridgeRoot {
         try { this.seal() } catch (error) { this.fail(error) }
       })
     }
+    return true
   }
 
   private seal(): void {
-    if (!this.operations.length || this.failure) return
-    const transaction: Transaction = { version: 1, sequence: ++this.sequence, operations: this.operations }
-    this.operations = []
+    if (!this.encoder.count || this.failure) return
+    const sequence = ++this.sequence
+    const encoded: Encoded = this.encoder.seal(sequence)!
+    const requests = this.encoder.requests()
     const removed = this.removed
     this.removed = []
-    // Values were validated when they were recorded, so this is plain
-    // serialization; a replacer would run per value and cost more than the
-    // serialization itself.
-    const encoded = JSON.stringify(transaction)
-    const bytes = typeof Buffer === "function" ? Buffer.byteLength(encoded) : new TextEncoder().encode(encoded).byteLength
+    const bytes = typeof encoded !== "string" ? encoded.byteLength : typeof Buffer === "function" ? Buffer.byteLength(encoded) : new TextEncoder().encode(encoded).byteLength
     if (this.pending >= this.maxPending || this.bytes + bytes > this.maxBytes) {
       this.fail(Error("Native transaction queue is full; root stopped to prevent lost commits"))
       return
@@ -180,7 +201,7 @@ export class BridgeRoot {
       if (this.failure) return
       try {
         const reply = await this.transport.send(encoded)
-        if (reply.sequence !== transaction.sequence) throw Error("Native transaction acknowledgement is out of order")
+        if (reply.sequence !== sequence) throw Error("Native transaction acknowledgement is out of order")
         for (const id of reply.retired) this.callbacks.delete(id)
         // Native has released these nodes; their ids can be reused.
         for (const id of removed) this.freeIds.push(id)
@@ -191,16 +212,22 @@ export class BridgeRoot {
           if (result.error !== undefined) call.reject(Error(result.error))
           else call.resolve(result.value)
         }
-        for (const operation of transaction.operations) {
-          if ((operation.op === "command" || operation.op === "query") && this.calls.has(operation.request)) throw Error("Missing native request result")
+        for (const request of requests) {
+          if (this.calls.has(request)) throw Error("Missing native request result")
         }
       } catch (error) { this.fail(error) }
-      finally { this.pending--; this.bytes -= bytes }
+      finally { this.pending--; this.bytes -= bytes; this.encoder.release(encoded) }
     })
   }
 
   host(component: string, props: Props): Host {
-    return { id: 0, component, props, root: this, initial: [], mounted: false, subscription: null, public: null }
+    let kind = -1
+    if (this.kinds) {
+      const known = this.kinds.get(component)
+      if (known === undefined) throw Error(`Unknown native component ${component}`)
+      kind = known
+    }
+    return { id: 0, component, kind, props, root: this, initial: [], mounted: false, subscription: null, public: null }
   }
 
   /** The ref object, created on first request so unreferenced nodes pay nothing. */
@@ -213,7 +240,7 @@ export class BridgeRoot {
       return new Promise((resolve, reject) => {
         try { validate(value) } catch (error) { reject(error); return }
         this.calls.set(request, { resolve, reject })
-        this.record({ op, id: host.id, component: host.component, request, value })
+        if (this.ready()) this.encoder.call(op, host.id, host.kind, host.component, request, value)
       })
     }
     host.public = Object.freeze({ get id() { return host.id }, command: (value: unknown) => call("command", value), query: (value: unknown) => call("query", value) })
@@ -250,13 +277,13 @@ export class BridgeRoot {
       this.styleIds.delete(oldest)
       this.liveStyles.delete(id)
       this.freeStyles.push(id)
-      this.record({ op: "dropStyle", id })
+      this.encoder.dropStyle(id)
     }
     const id = this.freeStyles.pop() ?? this.nextStyle++
     this.styleIds.set(text, id)
     this.liveStyles.add(id)
     this.styleByObject.set(style, id)
-    this.record({ op: "style", id, style: style as NativeProps })
+    this.encoder.style(id, style)
     return id
   }
 
@@ -269,63 +296,8 @@ export class BridgeRoot {
   }
 }
 
-const excluded = new Set(["children", "ref", "key", "onEvent"])
 const MAX_ID = 0xffff_fffd
 const MAX_STYLES = 4096
-
-/** Reject values JSON.stringify would silently drop or mangle. */
-function validate(value: unknown): void {
-  switch (typeof value) {
-    case "string": case "boolean": return
-    case "number": if (Number.isFinite(value)) return; break
-    case "object":
-      if (value === null) return
-      if (Array.isArray(value)) { for (const item of value) validate(item); return }
-      for (const key in value) validate((value as Record<string, unknown>)[key])
-      return
-    case "undefined": return
-  }
-  throw Error("Native props and commands must be JSON data")
-}
-
-/** The props that cross the bridge: everything except React's own fields.
- * A style object is replaced by the id of its shared definition. */
-function nativeProps(root: BridgeRoot, props: Props): NativeProps {
-  const result: NativeProps = {}
-  for (const key in props) {
-    const value = props[key]
-    if (excluded.has(key) || value === undefined) continue
-    validate(value)
-    result[key] = key === "style" && typeof value === "object" && value !== null ? root.styleId(value) : value
-  }
-  return result
-}
-
-/** Structural equality for JSON props. A re-rendered inline style object with
- * unchanged values must not cross the bridge. */
-function sameValue(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false
-  if (Array.isArray(a) !== Array.isArray(b)) return false
-  const keys = Object.keys(a)
-  if (keys.length !== Object.keys(b).length) return false
-  return keys.every(key => Object.hasOwn(b, key) && sameValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
-}
-/** Structural equality of two React props objects over their native fields,
- * without building filtered copies. */
-function sameProps(a: Props, b: Props): boolean {
-  let count = 0
-  for (const key in a) {
-    if (excluded.has(key) || a[key] === undefined) continue
-    count++
-    if (!Object.hasOwn(b, key) || !sameValue(a[key], b[key])) return false
-  }
-  for (const key in b) {
-    if (excluded.has(key) || b[key] === undefined) continue
-    count--
-  }
-  return count === 0
-}
 
 /** Create a node, placing it in the same operation when its parent is known. */
 function materialize(host: Host, parent: Host | BridgeRoot | null = null, before: Host | null = null): void {
@@ -333,12 +305,10 @@ function materialize(host: Host, parent: Host | BridgeRoot | null = null, before
   host.id = host.root.allocateId()
   host.mounted = true
   host.subscription = host.root.listen(host)
-  const operation: Operation = { op: "create", id: host.id, component: host.component, props: nativeProps(host.root, host.props), subscription: host.subscription }
-  if (parent) {
-    operation.parent = parent instanceof BridgeRoot ? null : parent.id
-    if (before) operation.before = before.id
+  if (host.root.ready()) {
+    host.root.encoder.create(host.id, host.kind, host.component, host.props, host.subscription,
+      parent ? (parent instanceof BridgeRoot ? null : parent.id) : undefined, parent && before ? before.id : undefined)
   }
-  host.root.record(operation)
   for (const child of host.initial) place(host, child)
   host.initial = [] // The worker retains no mounted child topology.
 }
@@ -349,8 +319,11 @@ function place(parent: Host | BridgeRoot, child: Host, before: Host | null = nul
     materialize(child, parent, before)
     return
   }
-  child.root.record({ op: "place", parent: parent instanceof BridgeRoot ? null : parent.id, child: child.id, before: before?.id ?? null })
+  if (child.root.ready()) child.root.encoder.place(parent instanceof BridgeRoot ? null : parent.id, child.id, before?.id ?? null)
 }
+
+function hide(host: Host): void { if (host.root.ready()) host.root.encoder.hidden(host.id, true) }
+function unhide(host: Host): void { if (host.root.ready()) host.root.encoder.hidden(host.id, false) }
 
 let priority = 0
 const context = Object.freeze({})
@@ -365,24 +338,22 @@ const config = {
   appendInitialChild: (parent: Host, child: Host) => { parent.initial.push(child) },
   appendChild: place, appendChildToContainer: place,
   insertBefore: place, insertInContainerBefore: place,
-  removeChild: (_: Host, child: Host) => child.root.record({ op: "remove", id: child.id }),
-  removeChildFromContainer: (_: BridgeRoot, child: Host) => child.root.record({ op: "remove", id: child.id }),
+  removeChild: (_: Host, child: Host) => { if (child.root.ready()) child.root.encoder.remove(child.id) },
+  removeChildFromContainer: (_: BridgeRoot, child: Host) => { if (child.root.ready()) child.root.encoder.remove(child.id) },
   commitUpdate: (host: Host, _: string, oldProps: Props, props: Props) => {
     host.props = props
-    if (!sameProps(oldProps, props)) host.root.record({ op: "props", id: host.id, component: host.component, props: nativeProps(host.root, props) })
+    const root = host.root
+    if (root.ready()) root.encoder.update(host.id, host.kind, host.component, oldProps, props)
     if (oldProps.onEvent !== props.onEvent) {
-      host.subscription = host.root.listen(host)
-      host.root.record({ op: "listen", id: host.id, subscription: host.subscription })
+      host.subscription = root.listen(host)
+      if (root.ready()) root.encoder.listen(host.id, host.subscription)
     }
   },
   commitTextUpdate: (host: Host, _: string, text: string) => {
     host.props = { text }
-    host.root.record({ op: "props", id: host.id, component: host.component, props: { text } })
+    if (host.root.ready()) host.root.encoder.update(host.id, host.kind, host.component, {}, host.props)
   },
-  hideInstance: (host: Host) => host.root.record({ op: "hidden", id: host.id, hidden: true }),
-  hideTextInstance: (host: Host) => host.root.record({ op: "hidden", id: host.id, hidden: true }),
-  unhideInstance: (host: Host) => host.root.record({ op: "hidden", id: host.id, hidden: false }),
-  unhideTextInstance: (host: Host) => host.root.record({ op: "hidden", id: host.id, hidden: false }),
+  hideInstance: hide, hideTextInstance: hide, unhideInstance: unhide, unhideTextInstance: unhide,
   getPublicInstance: (host: Host) => host.root.publicInstance(host),
   getRootHostContext: () => context, getChildHostContext: () => context,
   shouldSetTextContent: no, finalizeInitialChildren: no,

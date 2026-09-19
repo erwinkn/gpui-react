@@ -22,13 +22,23 @@ for (const [binary, features] of [["timing", []], ["heap", ["allocation-counts"]
   if (await build.exited !== 0) throw Error("Frame comparison build failed")
   copyFileSync(join(target, "release/gpui-react-frame-cost"), join(output, binary))
 }
+// Both bridge modes mount what the JavaScript bridge sealed for the scene, on
+// its wire: JSON text for "bridge", the binary wire for "binary".
+const wires = join(output, "wire")
+mkdirSync(wires, { recursive: true })
+writeFileSync(join(wires, "schema.json"), run(join(output, "timing"), ["schema"]) + "\n")
+const rowCounts = [100, 1000, 5000]
+for (const scene of ["flow", "list"]) {
+  for (const rows of rowCounts) run("bun", ["fixtures/bridge-counter/js-wire-dump.tsx", wires, String(rows), scene], root)
+}
+const env = { ...process.env, FRAME_BENCH_WIRE_DIR: wires, BRIDGE_SCHEMA: join(wires, "schema.json"), NODE_ENV: "production" }
 const results: object[] = []
-const modes = ["raw", "bridge"]
+const modes = ["raw", "bridge", "binary"]
 const images = join(output, "scene-images")
 const sceneHashes: Record<string, string> = {}
 for (const scene of ["flow", "list"]) {
   for (const mode of modes) {
-    execFileSync(join(output, "scenes"), [mode, scene, "100"], { cwd: output, env: { ...process.env, FRAME_BENCH_IMAGES: images }, timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] })
+    execFileSync(join(output, "scenes"), [mode, scene, "100"], { cwd: output, env: { ...env, FRAME_BENCH_IMAGES: images }, timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] })
     const hash = createHash("sha256").update(readFileSync(join(images, `${mode}-${scene}-100.png`))).digest("hex")
     if (sceneHashes[scene]) assert.equal(hash, sceneHashes[scene], `${mode} ${scene} image differs from the baseline`)
     sceneHashes[scene] = hash
@@ -38,12 +48,12 @@ console.log("PASS matching nonempty native scene images and explicit draw guards
 for (const allocations of [false, true]) {
   const executable = join(output, allocations ? "heap" : "timing")
   for (const scene of ["flow", "list"]) {
-    for (const rows of [100, 1000, 5000]) {
+    for (const rows of rowCounts) {
       // Rotate mode order across repeats to reduce a fixed thermal/order bias.
       for (let repeat = 0; repeat < 3; repeat++) {
         for (let index = 0; index < modes.length; index++) {
           const mode = modes[(index + repeat) % modes.length]!
-          const child = Bun.spawn([executable, mode, scene, String(rows)], { cwd: output, env: { ...process.env, FRAME_BENCH_IMAGES: "" }, stdout: "pipe", stderr: "pipe" })
+          const child = Bun.spawn([executable, mode, scene, String(rows)], { cwd: output, env: { ...env, FRAME_BENCH_IMAGES: "" }, stdout: "pipe", stderr: "pipe" })
           const timer = setTimeout(() => child.kill("SIGKILL"), 120_000)
           const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
           clearTimeout(timer)

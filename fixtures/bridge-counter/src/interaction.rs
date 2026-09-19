@@ -41,7 +41,8 @@ fn stalled() -> Result<()> {
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, gpui_react_host::gpui_react::ComponentProps)]
+#[wire(crate = "gpui_react_host::gpui_react")]
 #[serde(deny_unknown_fields)]
 struct Props {}
 struct Driver {

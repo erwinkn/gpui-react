@@ -24,11 +24,23 @@ export interface TransactionReply {
 
 export interface NativeEvent { target: number; subscription: number; payload: unknown }
 
+/** How one prop travels on the binary wire. */
+export type WireType = "bool" | "i32" | "u32" | "f32" | "f64" | "str" | "style" | "value"
+export interface WireField { name: string; type: WireType; required: boolean }
+/** One native component as the worker sees it. Index order is the wire's kind order.
+ * `fields` is null when the props type has no positional schema and travels as a map. */
+export interface KindSchema {
+  name: string
+  capabilities: { events: boolean; commands: boolean; queries: boolean; children: boolean; view: boolean }
+  fields: WireField[] | null
+}
+
 /** A transport is bound to one root/session. It must preserve transaction and
  * event/ack ordering. send resolves after native application, not presentation.
  * The payload is encoded once here and decoded once at native admission. */
 export interface Transport {
-  send(transaction: string): Promise<TransactionReply>
+  /** JSON text or the binary wire. A binary payload is valid until `send` settles. */
+  send(transaction: string | Uint8Array): Promise<TransactionReply>
   subscribe(receiver: (event: NativeEvent) => void, onError?: (error: Error) => void): () => void
   close(reason: string): void
 }

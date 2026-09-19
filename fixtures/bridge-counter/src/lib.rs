@@ -16,7 +16,8 @@ mod demo_capture;
 #[cfg(feature = "interaction-tests")]
 mod lifecycle;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, gpui_react_host::gpui_react::ComponentProps)]
+#[wire(crate = "gpui_react_host::gpui_react")]
 #[serde(deny_unknown_fields)]
 struct Props {
     step: u32,

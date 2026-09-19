@@ -94,6 +94,8 @@ pub struct Host {
 /// Passed to host-owned elements outside rendering.
 pub struct ElementContext<'a> {
     pub id: u32,
+    /// The row's slot in its kind's table; the key for `Extras` maps.
+    pub slot: u32,
     pub child_count: usize,
     pub window: &'a mut Window,
     pub cx: &'a mut App,
@@ -102,6 +104,8 @@ pub struct ElementContext<'a> {
 /// Passed to host-owned elements while the host builds its element tree.
 pub struct RenderContext<'a> {
     pub id: u32,
+    /// The row's slot in its kind's table; the key for `Extras` maps.
+    pub slot: u32,
     pub window: &'a mut Window,
     pub cx: &'a mut App,
     host: &'a Host,
@@ -240,17 +244,18 @@ impl Host {
         let node = self.node(id)?;
         self.tables[node.kind() as usize].view(node.slot)
     }
-    /// Mutate a host-owned element, for example from a paint callback.
+    /// Mutate a host-owned element and its kind's extras, for example from a
+    /// paint callback. The closure receives the row, the extras, and the slot.
     pub fn update_element<T: ReactElement, R>(
         &mut self,
         id: u32,
-        f: impl FnOnce(&mut T) -> R,
+        f: impl FnOnce(&mut T, &mut T::Extras, u32) -> R,
     ) -> Option<R> {
         let node = *self.node(id)?;
-        self.tables[node.kind() as usize]
-            .element_mut(node.slot)?
-            .downcast_mut::<T>()
-            .map(f)
+        let (row, extras) = self.tables[node.kind() as usize].element_mut(node.slot)?;
+        let row = row.downcast_mut::<T>()?;
+        let extras = extras.downcast_mut::<T::Extras>()?;
+        Some(f(row, extras, node.slot))
     }
     fn emitter(&self, id: u32, generation: u16) -> Emitter {
         Emitter::new(
@@ -278,6 +283,10 @@ impl Host {
     /// hosts decode on the worker with their own `Decoder`.
     pub fn decode(&mut self, json: &str) -> Result<Prepared> {
         self.decoder.parse(json)
+    }
+    /// The binary wire, decoded with this host's session state.
+    pub fn decode_binary(&mut self, bytes: &[u8]) -> Result<Prepared> {
+        self.decoder.parse_binary(bytes)
     }
 
     /// Decode and apply in one step. Production hosts decode on the worker and
@@ -370,6 +379,7 @@ impl Host {
                     let emitter = capabilities.events.then(|| self.emitter(id, generation));
                     let mut context = ElementContext {
                         id,
+                        slot: 0,
                         child_count: 0,
                         window,
                         cx,
@@ -393,6 +403,7 @@ impl Host {
                     let node = self.checked(id, kind)?;
                     let mut context = ElementContext {
                         id,
+                        slot: node.slot,
                         child_count: node.child_count as usize,
                         window,
                         cx,
@@ -481,6 +492,7 @@ impl Host {
                         let node = self.checked(id, kind)?;
                         let mut context = ElementContext {
                             id,
+                            slot: node.slot,
                             child_count: node.child_count as usize,
                             window,
                             cx,
@@ -529,6 +541,7 @@ impl Host {
             self.live -= 1;
             let mut context = ElementContext {
                 id,
+                slot: node.slot,
                 child_count: node.child_count as usize,
                 window,
                 cx,
@@ -696,6 +709,7 @@ impl Host {
             }
             let mut context = ElementContext {
                 id,
+                slot: node.slot,
                 child_count: node.child_count as usize,
                 window,
                 cx,
@@ -767,6 +781,7 @@ impl Host {
             node.slot,
             &mut RenderContext {
                 id,
+                slot: node.slot,
                 window,
                 cx,
                 host: self,
