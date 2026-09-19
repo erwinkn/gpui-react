@@ -644,3 +644,23 @@ concurrent manual compilation in the repository directory. The existing test
 correctly rejected those files. I removed only those generated files and ran
 the test alone. Its compilation already uses a temporary working directory;
 the assertion and application behavior were not changed.
+
+### Native frame comparison method
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Compare the new Host with direct use of its same ordinary controls, the old renderer, and a handwritten GPUI lower bound. | Compare only two application packages with different component behavior and build profiles. | High | The handwritten view omits selection and inspection. Its lower memory and CPU cost cannot be attributed solely to the bridge. The same-control comparison isolates the binding more closely. |
+| Use one binary, one GPUI revision, and the same native scene for all modes. | Load two separately built native addons into a single process. | High | A combined dependency graph enables the same GPUI features for every mode, including the old renderer's profiler feature. These are controlled source comparisons, not timings of independently published artifacts. |
+| Add an optional Rust-only `bench-internals` constructor for the existing `GpuixView`. | Duplicate the old renderer's construction in the fixture or add a production JS benchmark API. | High | The constructor must remain opt-in and must call the actual production constructor. The new runtime has no dependency on the old crate. |
+| Use a hidden production-mode application and assert separate mutation and draw phases. | Use `VisualTestAppContext` and assume its mutation calls do not draw. | High | Initial inspection found that the visual test context draws automatically at effect flush. Preliminary samples were discarded. The revised driver checks that mount/update do not render and that an explicit draw renders exactly once. No GPUI change was needed. |
+| Count requested Rust allocations in a separate binary from the timing build. | Instrument every allocation during the timing run or estimate memory from struct sizes. | High | Atomic accounting changes CPU cost and does not include Objective-C, GPU memory, RSS, or allocator metadata. Live values include GPUI caches and are measured relative to an empty window; memory retained after removal is not automatically a leak. |
+| Start with a status update beside 100, 1,000, and 5,000 text rows, in flow and virtual-list scenes, plus wheel and removal operations. | Claim this represents every editor, rich document, or JS runtime workload. | Medium | This isolates native frame and retained-model costs. It does not measure React reconciliation, JS encoding, worker latency, large application models, or physical presentation. Those limits must remain in the result report. |
+
+Release builds for timing and allocation counting pass. The four modes pass
+the 100-row flow/list checks in production mode, with pixel-identical native
+images. Each wheel is consumed by a native scroller. Separate allocation checks
+pass for all modes. Strict all-target, all-feature fixture Clippy passes. Cargo
+resolves one GPUI crate. The broader measurements follow this checkpoint.
+
+I stand behind this method and its scope. It does not yet establish a performance
+result or complete the release work.

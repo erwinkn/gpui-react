@@ -100,6 +100,8 @@ windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_HiDpi"] 
 # letting users write GPU-backed tests for their apps.
 default = ["test-support"]
 test-support = ["gpui/test-support", "gpui_platform/test-support", "gpui_macos/test-support", "gpui_macos/font-kit"]
+# Rust-only constructor for the isolated frame comparison. No N-API export.
+bench-internals = []
 
 [build-dependencies]
 napi-build = "2"

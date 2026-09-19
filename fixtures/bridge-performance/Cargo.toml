@@ -1,0 +1,23 @@
+[package]
+name = "gpui-react-frame-cost"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+allocation-counts = []
+
+[dependencies]
+gpui = { path = "../../zed/crates/gpui", default-features = false, features = ["font-kit", "test-support"] }
+gpui_macos = { path = "../../zed/crates/gpui_macos", default-features = false, features = ["font-kit", "test-support"] }
+gpui-react = { path = "../../crates/gpui-react" }
+gpui-react-controls = { path = "../../crates/gpui-react-controls" }
+gpuix-native = { path = "../../packages/native", features = ["bench-internals"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+[profile.release]
+debug = 1

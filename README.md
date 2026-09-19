@@ -54,6 +54,12 @@ Further native examples cover a trigger-width popup, card connectors, and nested
 modals with focus, clipping, input blocking, and accessibility checks.
 [Count-update measurements](./docs/bridge-list-performance.md) compare the native
 list binding with direct GPUI and document the range-based height-index update.
+The [native frame comparison](./fixtures/bridge-performance/README.md) measures
+mount, small updates, complete native draws, scrolling, removal, and Rust heap
+allocations with shared GPUI source and matching scenes. It includes direct
+calls to the same controls and a smaller handwritten GPUI lower bound. The
+existing native crate exposes `GpuixView::for_benchmark` only with the optional
+`bench-internals` Cargo feature. This diagnostic constructor adds no JS method.
 Native command errors do not undo earlier state changes. The host invalidates
 dependent geometry after each command invocation, including a failed command.
 

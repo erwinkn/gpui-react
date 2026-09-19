@@ -3401,6 +3401,13 @@ fn resolve_highlight(
 }
 
 impl GpuixView {
+    /// Construct the production view for a standalone native benchmark.
+    /// This opt-in Rust API has no JavaScript or test-renderer wrapper overhead.
+    #[cfg(feature = "bench-internals")]
+    pub fn for_benchmark(tree: Arc<Mutex<RetainedTree>>) -> Self {
+        Self::new(tree, None, "Native frame comparison".into(), SharedSelection::default())
+    }
+
     pub(crate) fn new(
         tree: Arc<Mutex<RetainedTree>>,
         event_callback: Option<EventCallback>,
