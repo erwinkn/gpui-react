@@ -3370,3 +3370,15 @@ Rust builds with `test-support` expose `Window::take_input_handler_for_tests()`
 and `Window::restore_input_handler_for_tests(handler)`. These let native IME tests
 call the installed platform input handler without activating a window. Restore
 the handler before the next input event. These methods are not JavaScript APIs.
+
+
+`TestGpuixRenderer.simulateInputMethod(text, marked, selectionStart?, selectionEnd?)`
+exercises that same installed handler from JavaScript in a native test-support
+build. Focus the input and call `flush()` first. `marked: true` updates its IME
+preedit. `marked: false` commits text through `replace_text_in_range`. Optional
+selection offsets are UTF-16 positions relative to the preedit; they default to
+a collapsed caret at its end. The method restores the handler, runs native work,
+and returns JSON with `selected` and `marked` ranges, each `[start, end]` or
+`null`. It preserves the existing helper used by external editor tests. It does
+not activate a window or drain application events. A missing focused handler
+throws. This helper is not part of the production renderer or the browser API.

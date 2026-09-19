@@ -56,3 +56,12 @@ The new bootstrap currently supports macOS/Bun. Pierre's default legacy native
 and WebGPU/WebGL entry points remain unchanged. A WASM composition build proves
 that the legacy browser adapter still compiles. The complete browser interaction
 suites belong to the Pierre project and are separate from this probe.
+
+`input-method.ts` checks the legacy renderer's generic `simulateInputMethod`
+helper against its built-in input. It verifies missing focus, UTF-16 preedit
+selection, composition commit, handler restoration, events, and undo. The
+legacy Pierre probe also checks the helper against the external viewport.
+
+```sh
+bun fixtures/bridge-pierre/input-method.ts /path/to/libgpuix_native.dylib
+```

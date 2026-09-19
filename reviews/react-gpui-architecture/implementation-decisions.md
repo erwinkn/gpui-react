@@ -415,3 +415,23 @@ I stand behind this extraction and its stated limits. I do not claim that the
 whole framework replacement is complete. The remaining geometry, event-race,
 performance, and distribution work remains under the active goal. No Cherry
 completion message has been sent.
+
+### Restoring the external IME test helper
+
+Pierre's complete interaction suite found that the extracted runtime lacked
+`TestGpuixRenderer.simulateInputMethod`. The earlier consumer checkout had a
+generic N-API helper in `test_renderer.rs`, beyond the GPUI take/restore methods
+already retained here. The new direct Pierre probe first failed with the same
+missing-method error.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Restore the exact generic helper contract, including optional UTF-16 selection offsets and the JSON `selected`/`marked` result. | Change Pierre's test semantics or add editor-specific simulation. | High | The installed native handler defines editing behavior. The helper stays test-only and does not activate windows. Its source came from the owner-identified prior checkout. |
+| Test the helper on the built-in native input and on the external Pierre viewport. | Check only that the method exists. | High | The built-in test checks preedit, surrogate offsets, selection, commit, restoration, event delivery, and undo. The external probe checks the existing event envelope and document-model split. A missing focused handler remains an explicit error. |
+| Keep native and JS production input paths unchanged. | Add an IME control API to the new application host. | High | This is a compatibility repair for an existing test API. The new bridge already tests its native input through the real GPUI platform handler. |
+
+The generic release-build input probe and strict fixture TypeScript check pass.
+The external composition must be rebuilt at the published helper commit before
+Pierre resumes its blocked IME and edge suites. Both Rust adapters will retain
+one common published framework pin. I stand behind this narrow compatibility
+repair; it does not complete the remaining framework acceptance work.

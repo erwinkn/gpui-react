@@ -403,6 +403,41 @@ impl TestGpuixRenderer {
         })
     }
 
+    /// Exercise the platform input-method contract without activating the OS window.
+    #[napi]
+    pub fn simulate_input_method(
+        &self,
+        text: String,
+        marked: bool,
+        selection_start: Option<u32>,
+        selection_end: Option<u32>,
+    ) -> Result<String> {
+        with_test_state(|cx, window, _view| {
+            let mut handler = cx
+                .update_window(window, |_, window, _| window.take_input_handler_for_tests())
+                .map_err(|e| Error::from_reason(e.to_string()))?
+                .ok_or_else(|| Error::from_reason("No focused input handler"))?;
+            if marked {
+                let end = selection_end.unwrap_or(text.encode_utf16().count() as u32) as usize;
+                let start = selection_start.unwrap_or(end as u32) as usize;
+                handler.replace_and_mark_text_in_range(None, &text, Some(start..end));
+            } else {
+                handler.replace_text_in_range(None, &text);
+            }
+            let selected = handler
+                .selected_text_range(false)
+                .map(|s| vec![s.range.start, s.range.end]);
+            let marked = handler.marked_text_range().map(|s| vec![s.start, s.end]);
+            cx.update_window(window, |_, window, _| {
+                window.restore_input_handler_for_tests(handler);
+                window.refresh();
+            })
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+            cx.run_until_parked();
+            Ok(serde_json::json!({"selected":selected,"marked":marked}).to_string())
+        })
+    }
+
     /// Simulate a single key down event through GPUI's input pipeline.
     /// Format: modifier-key string, e.g. "a", "enter", "cmd-s".
     /// Unlike simulate_keystrokes, this dispatches ONLY a KeyDownEvent —

@@ -281,6 +281,8 @@ export declare class TestGpuixRenderer {
    * The focused element receives keyDown/keyUp events.
    */
   simulateKeystrokes(keystrokes: string): void
+  /** Exercise the platform input-method contract without activating the OS window. */
+  simulateInputMethod(text: string, marked: boolean, selectionStart?: number | undefined | null, selectionEnd?: number | undefined | null): string
   /**
    * Simulate a single key down event through GPUI's input pipeline.
    * Format: modifier-key string, e.g. "a", "enter", "cmd-s".

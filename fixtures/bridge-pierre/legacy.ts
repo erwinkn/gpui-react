@@ -25,6 +25,16 @@ try {
   renderer.simulateKeystrokes("left")
   renderer.flush()
   assert.ok(renderer.drainEvents().filter((e: { eventType: string }) => e.eventType === "change").map((e: { value: string }) => JSON.parse(e.value)).some((e: { kind: string; key: string }) => e.kind === "key" && e.key === "left"))
+  const preedit = JSON.parse(renderer.simulateInputMethod("日本", true))
+  assert.deepEqual(preedit.marked, [0, 2])
+  assert.deepEqual(preedit.selected, [2, 2])
+  assert.ok(renderer.getPaintedText().includes("日本legacy line"))
+  const selectedPreedit = JSON.parse(renderer.simulateInputMethod("🙂", true, 0, 2))
+  assert.deepEqual(selectedPreedit.marked, [0, 2])
+  assert.deepEqual(selectedPreedit.selected, [0, 2])
+  const committed = JSON.parse(renderer.simulateInputMethod("你", false))
+  assert.equal(committed.marked, null)
+  assert.ok(renderer.drainEvents().filter((e: { eventType: string }) => e.eventType === "change").map((e: { value: string }) => JSON.parse(e.value)).some((e: { kind: string; text: string }) => e.kind === "insert" && e.text === "你"))
   commit([["setCustomProp", 1, "patch", {
     base: 1, version: 2, start: 0, deleteCount: 1, text: "patched legacy",
     rows: [{ id: "line", left: { text: "patched legacy", number: 1, start: 0, side: "additions" } }],
