@@ -47,3 +47,17 @@ and the legacy runtime's feature selection. No Pierre TypeScript, npm/release
 pins, website, scripts, or deployment files were edited or staged.
 See the [decision audit](./implementation-decisions.md#pierre-shared-viewport-checkpoint)
 for choices, test corrections, and limits.
+
+
+## IME test API follow-up
+
+The broader Pierre suites found a missing generic test helper from its previous
+runtime. Published framework commit `af4ee6d7682d922334eb92291b7ec92bc5251ddf`
+restores `TestGpuixRenderer.simulateInputMethod` with its original contract.
+Both Pierre Rust adapters now use that common pin. GPUI is unchanged.
+
+The built-in input probe covers preedit, UTF-16 selection, commit, restoration,
+undo, and read-only input. The rebuilt legacy Pierre probe also passes its IME
+checks. The new composition's source/relocated probes and the legacy WASM build
+plus wasm-bindgen pass at the updated pin. Updated artifacts and checksums are
+in the same handoff folder under names ending in `af4ee6d`.

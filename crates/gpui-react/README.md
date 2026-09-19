@@ -45,6 +45,14 @@ occurs in the same native transaction. The view stays alive until that event
 has been processed. The event sink must enqueue without waiting for JavaScript and fail explicitly
 on overflow. It receives serialization errors as well as successful events.
 
+Event routing follows GPUI's native effect queue. Once a subscription change
+has been applied in that queue, subsequent emissions use the new subscription.
+A previous frame's hitbox can still generate that emission before the next draw.
+Ordinary GPUI listeners may read current entity state or capture values from
+render; the binding does not replace those semantics. Tests explicitly dispatch
+input between native application and draw, then verify callback order, old and
+new hitboxes, and removal followed by a distinct replacement host ID.
+
 Tests use GPUI's test application and real entity/subscription machinery:
 
 ```sh

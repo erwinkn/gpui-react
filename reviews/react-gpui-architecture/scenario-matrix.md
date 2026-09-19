@@ -127,6 +127,15 @@ Suppose a visible button uses handler H1. React has produced H2, but UI has not 
 
 Recommendation to test: associate events with the native subscription generation that produced them. Retain that callback until native confirms retirement and earlier events have drained. Handle unmount explicitly; never route an old event to a new node that reused a key. This costs bounded callback metadata, not another native description tree. A latest-handler policy is also possible, but must be intentional and tested.
 
+The implemented binding now has a direct native regression for this boundary:
+[`event_frames.rs`](../../crates/gpui-react/tests/event_frames.rs). It uses native
+effect order. Events queued before a subscription change keep the old callback;
+later emissions use the new callback, including input on an older painted
+hitbox. Native entity state can be newer than that hitbox. Unmount retires the
+old route before a replacement can receive input. This is GPUI's ordinary
+mutable-state behavior; the binding does not promise callbacks from the last
+painted description.
+
 Mutations have a related problem: React may advance its committed Fiber state before native accepts a transaction. On queue saturation, dropping the transaction or merely throwing leaves the two sides inconsistent. Preserve and retry the complete ordered transaction within a bounded queue, or explicitly fail the root/session. Do not claim React will automatically stop committing when a native queue fills.
 
 Worker-side schema validation can check types and decode payloads. Topology validation also needs the live native model: parent existence, child order, cycles, valid references, and extension contracts. Validate the affected operations before mutating visible state. “Atomic” here means no frame or input dispatch sees a partial transaction; it does not promise rollback after an arbitrary Rust panic or side effect.

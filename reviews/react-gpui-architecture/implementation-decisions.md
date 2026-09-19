@@ -435,3 +435,37 @@ The external composition must be rebuilt at the published helper commit before
 Pierre resumes its blocked IME and edge suites. Both Rust adapters will retain
 one common published framework pin. I stand behind this narrow compatibility
 repair; it does not complete the remaining framework acceptance work.
+
+### Native callback order and the previous frame
+
+The new `event_frames.rs` regression dispatches native pointer input after a
+complete `Host::apply` and before another draw. It checks the exact boundary
+that was previously only described in the scenario review.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Keep ordinary GPUI mutable-view semantics and route callbacks by native effect order. | Retain callbacks and component descriptions for each painted frame. | Medium | After a commit, an old hitbox can generate an event whose listener reads newer native state and whose callback is newer. The API now states this. The binding does not promise a callback from the last displayed description. |
+| Test both event-time state and the render-time value captured by a normal GPUI listener. | Assert only the subscription ID. | High | The test proves that the old hitbox remains in use before draw and that the new bounds apply after draw. A queued earlier event still keeps its old subscription. |
+| Retire the old route before a replacement host can receive input. | Reuse the old host ID or transfer its pending frame callbacks. | High | A press on the removed view's old frame produces no event for the replacement. A new draw installs the replacement's distinct host ID and callback. |
+| Exercise real GPUI dispatch inside a controlled App update without an automatic intervening test draw. | Infer the race from direct event emission alone. | High | This validates the input/commit/draw boundary, not physical OS presentation timing. No input runs inside `Host::apply`; it runs after the transaction returns. |
+
+The complete binding test suite and strict all-target Clippy check pass. No
+production code or GPUI change was needed. I stand behind this explicit event
+contract. Geometry-dependent native components, broader performance comparisons,
+and package distribution remain required work.
+
+### IME repair validation at the published pin
+
+Both Pierre Rust adapters now pin published framework
+`af4ee6d7682d922334eb92291b7ec92bc5251ddf`; GPUI remains
+`feda54e61a9469cf484c387c341382d3172cecb6`. Cargo still resolves one GPUI crate.
+The legacy native build and external IME probe pass. The normal new composition
+passes its source and relocated worker probes. The legacy WASM build and
+wasm-bindgen output also pass at this pin. No npm or JS default entry changed.
+
+Pierre separately reports that its initial 636 unit/parity tests, both full
+WebGPU/WebGL browser suites, native editing/layout/UI/comment/search/marker
+suites, collection editing, and legacy application source/relocated worker
+checks pass. Its remaining IME and edge suites can now use the restored helper.
+This records the owner's report; it does not claim those final suites have
+already run against the new helper artifact.

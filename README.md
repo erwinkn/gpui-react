@@ -46,7 +46,10 @@ large-list anchors, layout changes, and click routing. The source and relocated
 worker fixtures verify first-frame anchors and keyed native identity. The
 optional native interaction driver also checks typing, IME, scrolling, hover,
 caret and animated pixels while the React worker is blocked. Delayed input
-events retain their original callback after React replaces it. This remains
+events retain their original callback after React replaces it. Native effect
+order decides callback versions. Input that occurs after a native subscription
+change can use the new callback while GPUI still hit-tests its previous frame;
+this is separate from an event already queued before the change. This remains
 an implementation checkpoint. Shutdown checks cover signals, a blocked worker,
 window close, worker failure, event overflow, and native cleanup before the
 window is destroyed. `Document` supplies native selection, clipboard, search,

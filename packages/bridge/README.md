@@ -52,6 +52,17 @@ microtask. Native events use subscription IDs, so callback versions remain
 available until native retirement. Each encoded transaction is retained until
 native acknowledgement. There is one in-flight send per root.
 
+Callback selection follows native effect order, not React render time or display
+presentation. An event emitted before a native subscription change keeps its
+old callback. An event emitted after that change uses the new callback. GPUI can
+still hit-test the last drawn frame while native component state is newer.
+The binding preserves that normal GPUI behavior. It does not promise that a
+callback or live state matches the pixels from the previous draw. After unmount,
+a listener left in an older frame cannot deliver an event to a replacement host
+ID. Components should include the relevant native identity and state in their
+event payloads when handlers need them. Queries and painted snapshots keep their
+separate version rules.
+
 The default limits are 256 pending transactions and 4 MiB of encoded data.
 `maxPending` and `maxBytes` override them. Saturation fails the root explicitly;
 silently dropping a React commit would desynchronize the renderer. `onError`
