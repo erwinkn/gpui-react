@@ -1454,6 +1454,7 @@ dependencies = [
  "gpui",
  "gpui-react",
  "gpui_macos",
+ "regex",
  "serde",
  "serde_json",
  "unicode-segmentation",

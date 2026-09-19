@@ -109,6 +109,8 @@ impl Container {
 impl Render for Container {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let this = cx.weak_entity();
+        let scroll_owner = this.clone();
+        let scrolls_vertically = matches!(self.props.scroll, Scroll::Y | Scroll::Both);
         let revision = self.revision;
         let mut el = div()
             .id("container")
@@ -116,6 +118,31 @@ impl Render for Container {
             .flex_col()
             .aria_label(self.props.label.clone())
             .on_painted(move |bounds, window, cx| {
+                if scrolls_vertically {
+                    let owner = scroll_owner.clone();
+                    crate::document::register_scroll_area(
+                        owner.entity_id(),
+                        bounds,
+                        window,
+                        cx,
+                        move |distance, cx| {
+                            owner
+                                .update(cx, |container, cx| {
+                                    let old = container.scroll.offset();
+                                    let y = (old.y - distance)
+                                        .clamp(-container.scroll.max_offset().y, px(0.));
+                                    if y == old.y {
+                                        return false;
+                                    }
+                                    container.scroll.set_offset(point(old.x, y));
+                                    container.revision += 1;
+                                    cx.notify();
+                                    true
+                                })
+                                .unwrap_or(false)
+                        },
+                    );
+                }
                 this.update(cx, |this, cx| {
                     this.painted = Some(Painted {
                         bounds: bounds.into(),

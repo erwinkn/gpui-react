@@ -29,7 +29,7 @@ emits the native `.node` binary. The [counter fixture](./fixtures/bridge-counter
 tests props, events, commands, queries, worker stalls, repeated startup, startup
 failure, invalid commits, and a relocated compiled executable. The
 [standard controls](./crates/gpui-react-controls/README.md) now include an ordinary
-GPUI input, container, text leaf, and variable-height list, with
+GPUI input, container, text leaf, variable-height list, and document text services, with
 [typed React wrappers and their API contract](./packages/bridge-controls/README.md).
 Native state owns input text, selection, IME, undo, caret, and scroll positions.
 Delayed replacements require the input revision. Lists can use a bounded React
@@ -49,7 +49,10 @@ caret and animated pixels while the React worker is blocked. Delayed input
 events retain their original callback after React replaces it. This remains
 an implementation checkpoint. Shutdown checks cover signals, a blocked worker,
 window close, worker failure, event overflow, and native cleanup before the
-window is destroyed. Document text services, broader consumer cases,
+window is destroyed. `Document` supplies native selection, clipboard, search,
+and painted text inspection across React and native component text. Its drag
+autoscroll uses the existing native list and container state. Inherited font
+changes invalidate list measurements before layout. Broader consumer cases,
 performance work, and release distribution are in progress. The existing API
 below remains usable. See the
 [accepted architecture and scenarios](./reviews/react-gpui-architecture/scenario-matrix.md).

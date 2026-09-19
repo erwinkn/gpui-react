@@ -123,13 +123,126 @@ They must have equal viewport and content widths. Different groups remain
 independent; removing the group creates a new independent handle at the origin.
 The group is ignored on other scroll modes. No offset is copied through React.
 
-`Text` takes `text: string` and optional `style`; it is a leaf. Its asynchronous
-`query(null)` returns `{text, revision, painted}`. Here `text` is the current
-native value, while `painted` describes its last paint. This initial text control
-does not yet provide document selection or search. Those services remain under
-implementation. A primitive string child also creates a text leaf. For a complete
-line with interpolation, prefer ``<Text text={`Hello ${name}!`} />``; separate
-native text children remain separate layout items.
+`Text` accepts `text: string` or string/number children, plus optional `style`.
+For example, `<Text>Hello {name}!</Text>` joins interpolation into one native
+text value. Supplying both forms, or a React element as a text child, throws.
+Use native GPUI text runs for multiple styles inside one logical text. Primitive
+strings outside `Text` remain separate native layout items.
+
+`textKey` gives text a stable logical identity within a `Document`. Supply it
+when virtualized rows can unmount and remount. Without it, the native entity
+provides an identity for its own lifetime. `selectable` and `searchable` both
+default to true. Set either to false independently. `matchIndexOffset` is an
+optional absolute match base for this text in a virtualized source.
+`query(null)` returns `{text, revision, painted}`. The value is current native
+text; the geometry is from its last paint.
+
+## Document text services
+
+Wrap selectable content in `Document`. It is an ordinary native GPUI view with
+`children`, `style`, `search`, `selectionColor`, `onEvent`, and `ref`.
+Selection color defaults to `#3875d799`. Nested documents have separate
+selection, focus, and search state. Native components can join the same scope
+through the Rust `document_text` helper.
+
+```tsx
+import { createRef } from "react"
+import { Document, Text, type DocumentRef } from "@gpuix/bridge-controls"
+
+const document = createRef<DocumentRef>()
+root.render(<Document ref={document} search={{ query: "reader", activeIndex: 0 }}>
+  <Text textKey="greeting">Hello {name}! Welcome, reader.</Text>
+  <Text textKey="footer" selectable={false}>Read-only chrome</Text>
+</Document>)
+
+// This query does not force a draw. Check that content has painted first.
+const snapshot = await document.current!.query(null)
+if (snapshot.text.some(text => text.key === "greeting")) {
+  await document.current!.command({
+    type: "select", expectedContentRevision: snapshot.contentRevision,
+    start: { key: "greeting", offset: 0 }, end: { key: "greeting", offset: 5 },
+  })
+}
+```
+
+Dragging, double-click word selection, triple-click paragraph selection,
+clipboard keys, and drag autoscroll run natively. A simple click can still reach
+a clickable parent. Copy and Select All keyboard handling belongs to the
+focused document; an input inside it keeps its own editor shortcuts. Autoscroll
+uses native container/list handles and can continue after the anchor row leaves
+the viewport. It needs overlapping painted content between scroll steps.
+
+Commands are `clear`, `copy`, `selectAll`, and `select`. `select` takes start and
+end `{key, offset}` endpoints plus `expectedContentRevision`. Offsets use UTF-16.
+Invalid offsets, split surrogate pairs, stale content revisions, and endpoints
+absent from the paint registry reject. `selectAll` and `select` reject before
+the first paint. They select registered logical texts, not unloaded rows.
+For a full export, read the application data model.
+
+The selection retains shared source text after rows unmount. Copy returns that
+snapshot until selection changes or clears. It is not a live range remapped
+through document edits. A selection wash appears only where the selected bytes
+still match the current logical text at that range. Copy inserts one newline
+between selected logical texts.
+
+`search` accepts:
+
+| Field | Behavior |
+| --- | --- |
+| `query` | Query string. Empty queries produce no matches. |
+| `regex` | Treat the query as a Rust regex when true; default false. Invalid regexes reject the transaction during prop validation. Zero-length matches are excluded. |
+| `caseSensitive` | Default false. |
+| `wholeWord` | Add Unicode word boundaries around the query; default false. |
+| `activeIndex` | Optional zero-based match index for the active color. |
+| `matchIndexOffset` | Default zero. Match count before the registered content window. |
+| `color`, `activeColor` | CSS colors, default `#ffd54d66` and `#ff9900aa`. |
+
+Search matches each logical text separately; it does not join the document or
+match across paragraph boundaries. Matching uses painted text from native and
+React components in paint order. Nonselectable text stays searchable unless
+`searchable={false}`. Native helpers can contribute styled runs as one logical
+text, so style boundaries do not split a match.
+
+For a virtual list, give each supplied text its absolute `matchIndexOffset`
+when the application knows that prefix. It overrides the document offset for
+that text. Native scrolling can then preserve global active match numbering
+without a React update. Counts cover registered text only. The application
+owns the full-source count and prefixes for a query. Do not use row indices as
+match prefixes unless each row has exactly one match.
+
+Native caches reuse matching ranges when only colors, the active index,
+geometry, or match offsets change. Prop admission still validates the regex.
+The cache retains only text present in the latest paint, not earlier windows.
+
+`query(null)` returns:
+
+- `text`: registered entries with `{key, text, bounds, selectable, searchable}`.
+- `contentRevision`: version of registered text, order, and text options.
+- `selection`, `selectionRevision`: current selected text and its version.
+- `paintedSelectionRevision`, `ranges`: selection version and geometry from the
+  last paint. Each range is `{key, start, end, rects}` with UTF-16 offsets.
+- `highlights`: the same range format plus global `index` and `active`.
+- `matchCount`, `matchIndexOffset`, `query`: the registered count, scope offset,
+  and query settings from the last paint.
+- `frame`: last paint's bridge frame tag, or null outside a bridge host.
+
+Bounds and rectangles use logical window pixels and the paint clip. Current
+selection can be newer than painted selection geometry. A query never performs
+layout. Geometry-only changes advance the frame while content revision stays
+unchanged. Content revision can also change as virtualization changes the
+registered window.
+
+Events are `{type: 'selection', revision, hasSelection}` and
+`{type: 'search', query, frame, contentRevision, count, indexOffset}`. Selection events carry
+no joined text; query or copy when needed. Search events follow the complete
+paint and distinguish query changes even when the match count is equal.
+The event includes its query settings and paint frame, so delayed results retain
+their source. Active-index and color-only changes do not emit new search results. A listener
+added later receives future events; use a query for the current snapshot.
+
+GPUI cached-view replay skips paint callbacks. Keep document content uncached
+until the integration has a tested way to replay its text metadata. The current
+controls do not use cached-view replay.
 
 ## Lists
 
@@ -170,7 +283,9 @@ Commands are:
   Use this when native code changes offscreen content outside React transactions.
 
 React prop and descendant-structure updates invalidate affected row measurements
-before later commands in the transaction. A changed row window and a scroll
+before later commands in the transaction. The native layout pass also detects
+inherited typography changes and invalidates measured heights before resolving
+anchors. A changed row window and a scroll
 command from a synchronous layout effect therefore reach the same native layout.
 For a focus target not yet rendered, scroll its row into the viewport before
 sending its focus command. An already rendered focused row uses GPUI's native

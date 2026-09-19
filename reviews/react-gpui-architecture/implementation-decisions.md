@@ -274,3 +274,53 @@ I stand behind this checkpoint. It fixes the composition boundary without
 adding a second runtime or a default native addon. The user authorized tested
 commits without further approval. Document work and the remaining consumer,
 performance, and distribution requirements stay active.
+
+## Native document and inherited list geometry checkpoint
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Keep document services on ordinary uncached GPUI views. | Add paint-cache metadata replay in the same change. | Medium | GPUI cached-view replay skips the callbacks that supply selection, search, and inspection metadata. The current controls do not cache views. A custom component that uses cached views must avoid that path for participating text until replay is tested. |
+| Preserve selected source text as a snapshot, including after virtualization or removal. | Map live selection ranges through every source edit or discard selection on unmount. | Medium | Copy can return the text selected before an edit. This is explicit in the API. A wash paints only when the selected bytes at that logical key and range still match. An editor with live range transformation keeps that policy in its own native model. |
+| Extend virtualized drag selection through overlapping painted entries. | Keep the full source document in the text service. | Medium | A jump that skips all overlap cannot recover unseen text. The native drag clock limits movement to half a viewport per completed paint. Missing or unloaded content still belongs to the application's data model. Select All covers registered text; full export does not use this service. |
+| Use a 16 ms native drag clock, distance gain of 15 per second, and a half-viewport step limit. | Introduce a shared motion scheduler or pass drag frames through JavaScript. | Medium | These are control behavior choices, not measured optimal constants or display-rate promises. The paint limit preserves virtualized overlap and prevents accumulated invisible steps. Release and unmount cancel the task. |
+| Fix eligible scroll regions at press time, using native registered viewport bounds in reverse paint order. | Add every region crossed later by the pointer, or store a separate scroll-container tree. | Medium | The original dynamic region scan scrolled an unrelated sibling. The new test covers stacked siblings and nested container fallback. Arbitrary overlapping custom scrollers may need more explicit source ownership; that case is not claimed tested. |
+| Search each complete logical text separately with Rust regexes. | Join all text into one document string, or reproduce JavaScript regex semantics. | High | A query cannot span logical paragraphs. Regex syntax and zero-length behavior follow the Rust regex crate. Empty matches do not create highlight rectangles. Invalid patterns reject during prop validation. |
+| Validate a query during every props decode, then reuse the previous matcher and range caches when its matching fields are equal. | Add a global compiler cache or skip validation for cursor-only changes. | High | A cursor update still pays regex construction at admission. It does not rematch text. The Arc identity regression verifies range reuse for colors, cursor, geometry, and offsets. A measured admission bottleneck may justify a bounded compiler cache later. |
+| Keep separate content and query dependencies; omit cursor and colors from result invalidation. | Use one props revision or the match count as the cache/event key. | High | Same-count query changes must report, while moving the active match must not rescan content. Tests cover both behaviors. Content revision tracks registered text, order, and options, not geometry. |
+| Include query settings and frame tags in search events, and preserve painted query metadata in snapshots. | Read current props while returning older highlight geometry. | High | A test returned new offset 8 with the earlier paint's offset-2 matches before the fix. Snapshots now retain the painted matcher by shared handle and the painted offset. A delayed event identifies its own query and frame. |
+| Supply an optional absolute match prefix on each logical text. | Require React to update a document-wide offset after every native scroll. | High | A row number is not a match prefix when rows have different match counts. Applications own full-source counts and prefixes for the query. The GPU regression scrolls directly to global active match 20 without a worker update. |
+| Join React string/number interpolation once in the `Text` wrapper. | Retain split primitive text nodes and reconstruct groups during selection and search. | High | Nested React elements inside `Text` are rejected. Styled logical text uses native GPUI text runs. The source and relocated worker tests require one native value for interpolated text. Old split-node grouping state and its tests were removed because that representation is absent from this API. |
+| Adapt the tested selection state with shared GPUI strings and exact change results. | Copy full source strings and hash all selected bytes on each drag event. | High | The ownership regression failed before this change. Selected spans now share source bytes, and joined text is produced only for an explicit query or copy. Selected content can retain source memory after its view disappears; clear releases it. Comet source and license notices remain. |
+| Use Unicode word boundaries and whole graphemes for double click, with GPUI character hit testing. | Use alphanumeric character scans and nearest caret offsets for every mouse operation. | High | Before the fix, a combining-mark word selected one byte and a right-half emoji click selected nothing. The unit and GPU regressions now pass. This does not claim a full independent bidi text-geometry validation. |
+| Derive highlight and selection rectangles from GPUI shaped lines and wrap boundaries. | Reshape text or maintain an independent layout model. | High | Every painted text retains native geometry until the next paint. This is measurement data, not a second host tree. Tests cover hard lines, wrapping, font/width changes, and 300 lines without the old fixed-line cap. Broad rich-document costs remain to be measured. |
+| Register text and scroll regions during paint; use prepaint only for native text hitboxes. | Keep speculative list prepaint entries as the visible document. | High | GPUI can discard speculative rows. Document content follows completed paint order, including native component text and list rows. Text outside a document adds no document hitbox. Nested documents restore the enclosing native scope. |
+| Delay pointer capture and document focus until a drag starts, or a double/triple click selects. | Capture immediately on every text press. | High | The first implementation swallowed an ordinary clickable label. The regression now requires that parent click to arrive, while drag release outside the document still works. |
+| Send small selection notifications and leave current-state reads asynchronous. | Send the joined selection text on every pointer move. | High | A handler must query when it needs text. Selection revisions and painted selection revisions remain separate. New listeners receive future events, not a replay of an earlier result. |
+| Invalidate list height measurements when inherited native text metrics change during layout. | Compare only list props or repair its anchor after layout. | High | The old negative-anchor test put row 1 at y=40 after a parent font change; the required position was y=20. The wrapper uses GPUI's normal `remeasure_items` before layout and adds no layout box. It tracks geometry-dependent text style fields; direct list prop changes remain conservatively invalidated. |
+
+Validation passed 43 controls unit tests, two list measurement tests, one list
+allocation regression, strict controls and host Clippy checks, and fourteen
+React/transport tests. The manual list benchmark remains separately ignored.
+The input, container, list, and document GPU examples pass with offscreen
+windows. The document image was inspected. The document example also checks
+nested scroll fallback, sibling isolation, and release cancellation.
+
+The source and relocated compiled worker suites pass after rebuilding the
+composition. The new document case checks interpolation, query provenance,
+UTF-16 selection, snapshot text, selection events, and clear. Existing list,
+blocked-worker input/IME/scroll/animation, repeated-session, startup-failure,
+and full lifecycle cases also pass. Strict fixture TypeScript checking passes.
+
+Failing tests were captured before fixes for inherited font anchors, missing
+virtual match-prefix props, drag autoscroll, click routing, Unicode words,
+right-half glyph selection, source text copying, mixed-generation snapshots,
+and unrelated sibling scrolling. The API and native component helper are
+documented in the root, crate, package, and fixture READMEs. No GPUI, Cherry,
+or Pierre source files changed in this checkpoint.
+
+I stand behind this checkpoint under its stated contracts. It does not complete
+the overall goal. Remaining required work includes real editor/diff and GPU
+component compositions, native geometry-dependent controls, broader frame and
+memory comparisons, the old-pixels/new-subscription race, installed/released
+packages, and the final scenario audit. Cherry will receive one completion
+handoff after that work, not an early integration claim.

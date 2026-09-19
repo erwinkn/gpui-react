@@ -1,4 +1,5 @@
 import { nativeComponent, type NativeRef, type FrameInfo } from "@gpuix/bridge"
+import { Children, createElement, type ReactNode, type Ref } from "react"
 
 export type Length = number | "100%" | "auto"
 export interface Style {
@@ -74,10 +75,53 @@ export interface ContainerSnapshot {
 }
 export type ContainerRef = NativeRef<ContainerCommand, null, ContainerSnapshot>
 export const Container = nativeComponent<ContainerProps, ContainerEvent, ContainerCommand, null, ContainerSnapshot>("container")
-export interface TextProps { text: string; style?: Style }
+export interface TextProps {
+  text?: string; children?: ReactNode; style?: Style
+  /** Stable logical identity inside a Document, including across row remounts. */
+  textKey?: string
+  selectable?: boolean
+  searchable?: boolean
+  /** Absolute match index before this logical text in a virtualized source. */
+  matchIndexOffset?: number
+}
 export interface TextSnapshot { text: string; revision: number; painted: Painted | null }
 export type TextRef = NativeRef<never, null, TextSnapshot>
-export const Text = nativeComponent<TextProps, never, never, null, TextSnapshot>("text")
+const NativeText = nativeComponent<Omit<TextProps, "children" | "text"> & { text: string }, never, never, null, TextSnapshot>("text")
+export function Text({ text, children, ...props }: TextProps & { ref?: Ref<TextRef> }) {
+  if (text !== undefined && children !== undefined) throw Error("Text accepts text or string/number children, not both")
+  const value = text ?? Children.toArray(children).map(child => {
+    if (typeof child !== "string" && typeof child !== "number") throw Error("Text children must be strings or numbers; use a native text component for styled runs")
+    return String(child)
+  }).join("")
+  return createElement(NativeText, { ...props, text: value })
+}
+
+export interface DocumentQuery {
+  query: string; regex: boolean; caseSensitive: boolean; wholeWord: boolean
+}
+export interface DocumentSearch extends Partial<Omit<DocumentQuery, "query">> {
+  query: string
+  activeIndex?: number | null; matchIndexOffset?: number
+  color?: string; activeColor?: string
+}
+export interface DocumentProps { style?: Style; search?: DocumentSearch; selectionColor?: string }
+export interface TextRange { key: string; start: number; end: number; rects: Rect[] }
+export interface DocumentSnapshot {
+  text: Array<{ key: string; text: string; bounds: Rect; selectable: boolean; searchable: boolean }>
+  contentRevision: number
+  selection: string | null; selectionRevision: number; paintedSelectionRevision: number
+  ranges: TextRange[]
+  highlights: Array<TextRange & { index: number; active: boolean }>
+  matchCount: number; matchIndexOffset: number; query: DocumentQuery | null; frame: FrameInfo | null
+}
+export type DocumentEvent =
+  | { type: "selection"; revision: number; hasSelection: boolean }
+  | { type: "search"; query: DocumentQuery | null; frame: FrameInfo | null; contentRevision: number; count: number; indexOffset: number }
+export type DocumentCommand =
+  | { type: "clear" | "copy" | "selectAll" }
+  | { type: "select"; start: { key: string; offset: number }; end: { key: string; offset: number }; expectedContentRevision: number }
+export type DocumentRef = NativeRef<DocumentCommand, null, DocumentSnapshot>
+export const Document = nativeComponent<DocumentProps, DocumentEvent, DocumentCommand, null, DocumentSnapshot>("document")
 export interface ListProps {
   style?: Style
   itemCount?: number

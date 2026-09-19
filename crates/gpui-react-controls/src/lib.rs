@@ -1,5 +1,9 @@
 //! Native controls. Each control is an ordinary GPUI entity with one owner of its state.
 pub mod container;
+pub mod document;
+pub use document::{
+    Document, DocumentCommand, DocumentEvent, DocumentProps, DocumentSnapshot, document_text,
+};
 pub mod geometry;
 pub mod input;
 pub mod list;
@@ -13,6 +17,13 @@ pub use input::{Input, InputCommand, InputEvent, InputProps, InputSnapshot};
 pub use style::{Color, Length, Style};
 
 pub fn register(registry: &mut gpui_react::Registry) -> anyhow::Result<()> {
+    registry.register(
+        gpui_react::Component::<Document>::new("document")
+            .children()
+            .events()
+            .commands()
+            .queries(),
+    )?;
     registry.register(
         gpui_react::Component::<VirtualList>::new("list")
             .children()

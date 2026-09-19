@@ -30,13 +30,15 @@ The test keeps windows in the background and closes its own processes. It checks
 - Worker startup error, missing worker entry, and rejected native props.
 - A 100,000-row logical list supplied with sixty React rows, a first-frame
   layout-effect anchor, an atomic row-window change, and keyed child identity.
+- Interpolated document text as one native value, search, versioned UTF-16
+  selection, and native selection events.
 - A compiled Bun executable with all worker entries, moved outside its build directory.
 
 The final state reports a native render count, but occluded windows need not draw
 on every update. Native timer progress does not measure display FPS or
 input-to-photon latency. The controls crate has a separate GPU-backed keyboard,
-IME, accessibility, and nested-scroll test. The native controls also have list and shared-scroll scenarios. Document text
-services and external editor examples remain later validation stages.
+IME, accessibility, and nested-scroll test. The native controls also have list, shared-scroll, and document scenarios.
+External editor examples remain a later validation stage.
 
 ## Native interaction during a worker stall
 

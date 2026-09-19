@@ -16,6 +16,7 @@ anyhow = "1"
 unicode-segmentation = "1"
 web-time = "1"
 csscolorparser = "0.8.3"
+regex = "1"
 
 [dev-dependencies]
 gpui = { path = "../../zed/crates/gpui", default-features = false, features = ["font-kit", "test-support"] }

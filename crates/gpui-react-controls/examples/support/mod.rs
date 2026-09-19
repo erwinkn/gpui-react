@@ -15,9 +15,17 @@ pub struct Harness {
 }
 impl Harness {
     pub fn new(width: f32, height: f32) -> Self {
+        Self::with_components(width, height, |_| {})
+    }
+    pub fn with_components(
+        width: f32,
+        height: f32,
+        register: impl FnOnce(&mut gpui_react::Registry),
+    ) -> Self {
         let mut cx = VisualTestAppContext::new(Rc::new(gpui_macos::MacPlatform::new(false)));
         let mut registry = gpui_react::Registry::default();
         gpui_react_controls::register(&mut registry).unwrap();
+        register(&mut registry);
         let events = Arc::new(Mutex::new(Vec::new()));
         let sink = events.clone();
         let window = cx

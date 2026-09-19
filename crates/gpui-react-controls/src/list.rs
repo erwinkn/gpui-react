@@ -82,6 +82,32 @@ struct Row {
     view: AnyView,
     focus: FocusHandle,
 }
+
+#[derive(PartialEq)]
+struct TextMetrics {
+    font: Font,
+    size: Pixels,
+    line_height: Pixels,
+    rem: Pixels,
+    white_space: WhiteSpace,
+    overflow: Option<TextOverflow>,
+    line_clamp: Option<usize>,
+}
+impl TextMetrics {
+    fn current(window: &Window) -> Self {
+        let style = window.text_style();
+        let rem = window.rem_size();
+        Self {
+            font: style.font(),
+            size: style.font_size.to_pixels(rem),
+            line_height: style.line_height_in_pixels(rem),
+            rem,
+            white_space: style.white_space,
+            overflow: style.text_overflow,
+            line_clamp: style.line_clamp,
+        }
+    }
+}
 /// GPUI ListState is the sole owner of row geometry and native scroll physics.
 pub struct VirtualList {
     props: ListProps,
@@ -93,6 +119,7 @@ pub struct VirtualList {
     painted_rows: Option<RowRange>,
     pending_range: Option<RowRange>,
     requested_range: Option<RowRange>,
+    text_metrics: Option<TextMetrics>,
 }
 impl VirtualList {
     pub fn new(props: ListProps, window: &mut Window, _: &mut Context<Self>) -> Self {
@@ -111,6 +138,7 @@ impl VirtualList {
             painted_rows: None,
             pending_range: None,
             requested_range: None,
+            text_metrics: None,
         }
     }
     fn make_state(props: &ListProps, count: usize, estimate: Pixels) -> ListState {
@@ -308,7 +336,110 @@ impl Render for VirtualList {
                 })
                 .ok();
             })
-            .child(gpui::list(self.state.clone(), item).w_full().h_full())
+            .child(ListLayout {
+                owner: cx.weak_entity(),
+                child: gpui::list(self.state.clone(), item)
+                    .w_full()
+                    .h_full()
+                    .into_any_element(),
+            })
+    }
+}
+
+// GPUI requires ListState owners to invalidate heights when item geometry
+// changes. At this point the enclosing div has applied inherited, hover, and
+// focus text styles. Invalidating before native layout also preserves commands
+// that need newly measured preceding rows to resolve a negative offset.
+struct ListLayout {
+    owner: WeakEntity<VirtualList>,
+    child: AnyElement,
+}
+impl Element for ListLayout {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, ()) {
+        let metrics = TextMetrics::current(window);
+        self.owner
+            .update(cx, |list, _| {
+                if list
+                    .text_metrics
+                    .as_ref()
+                    .is_some_and(|old| old != &metrics)
+                {
+                    list.state.remeasure_items(0..list.state.item_count());
+                }
+                list.text_metrics = Some(metrics);
+            })
+            .ok();
+        (self.child.request_layout(window, cx), ())
+    }
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.child.prepaint(window, cx);
+    }
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _: &mut (),
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let owner = self.owner.clone();
+        crate::document::register_scroll_area(
+            owner.entity_id(),
+            bounds,
+            window,
+            cx,
+            move |distance, cx| {
+                owner
+                    .update(cx, |list, cx| {
+                        let top = list.state.logical_scroll_top();
+                        if list.state.max_offset_for_scrollbar().y <= px(0.)
+                            || (distance > px(0.) && list.state.is_scrolled_to_end() == Some(true))
+                            || (distance < px(0.)
+                                && top.item_ix == 0
+                                && top.offset_in_item <= px(0.))
+                        {
+                            return false;
+                        }
+                        list.state.scroll_by(distance);
+                        list.requested_range = None;
+                        list.revision += 1;
+                        cx.notify();
+                        true
+                    })
+                    .unwrap_or(false)
+            },
+        );
+        self.child.paint(window, cx);
+    }
+}
+impl IntoElement for ListLayout {
+    type Element = Self;
+    fn into_element(self) -> Self {
+        self
     }
 }
 impl ReactView for VirtualList {

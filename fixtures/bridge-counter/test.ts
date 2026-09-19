@@ -33,6 +33,9 @@ try {
     console.log("PASS source interaction worker", interaction.trim())
     console.log("PASS source lifecycle", (await run("bun", [join(fixture, "lifecycle-test.ts")])).trim())
   }
+  const document = await run("bun", [join(fixture, "host.ts")], undefined, "document")
+  assert.match(document, /React document:/)
+  console.log("PASS source document worker", document.trim())
   const repeat = await run("bun", [join(fixture, "host.ts")], undefined, "repeat")
   assert.equal(repeat.match(/Native counter state after worker stall/g)?.length, 3)
   console.log("PASS three sequential native sessions")
@@ -41,7 +44,7 @@ try {
     console.log(`PASS ${mode} cleanup`)
   }
   const binary = join(temporary, "build", "counter")
-  await run("bun", ["build", "--compile", join(fixture, "host.ts"), join(fixture, "worker.tsx"), join(fixture, "list-worker.tsx"), join(fixture, "interaction-worker.tsx"), "--outfile", binary], temporary)
+  await run("bun", ["build", "--compile", join(fixture, "host.ts"), join(fixture, "worker.tsx"), join(fixture, "list-worker.tsx"), join(fixture, "interaction-worker.tsx"), join(fixture, "document-worker.tsx"), "--outfile", binary], temporary)
   assert.deepEqual((await readdir(checkout)).filter(name => name.endsWith(".bun-build") && !originalFiles.has(name)), [], "Compilation left generated files in the checkout")
   const moved = join(temporary, "relocated", "counter")
   await cp(binary, moved, { recursive: true })
@@ -49,6 +52,9 @@ try {
   const packaged = await run(moved, [], tmpdir())
   assert.match(packaged, /Native counter worker completed/)
   console.log("PASS relocated executable", packaged.trim())
+  const packagedDocument = await run(moved, [], tmpdir(), "document")
+  assert.match(packagedDocument, /React document:/)
+  console.log("PASS relocated document worker", packagedDocument.trim())
   const packagedList = await run(moved, [], tmpdir(), "list")
   assert.match(packagedList, /first-frame anchor/)
   console.log("PASS relocated list worker", packagedList.trim())

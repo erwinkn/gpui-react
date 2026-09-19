@@ -6,6 +6,12 @@ and undo behavior follow Comet's composer, reviewed at commit
 `b3fa51872f70c8f973c241b659cf0c166766f4f5`. The word-range helper follows the
 Comet selection port in GPUiX. Source links are in `src/input.rs`.
 
+Document selection adapts the Comet selection port in GPUiX, including the
+virtualized drag correction at `3536a3702ca405fec1321e95f54e280240c5d38f`.
+`src/document/selection.rs` retains the source links. This adaptation shares
+immutable text, uses one complete logical text per entry, and selects Unicode
+words and graphemes.
+
 Comet: Copyright (c) 2026 Wing. MIT License:
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

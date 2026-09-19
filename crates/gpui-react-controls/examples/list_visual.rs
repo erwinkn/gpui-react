@@ -159,4 +159,41 @@ fn main() {
         "a sibling insertion must not suppress an existing row's height invalidation"
     );
     println!("PASS changed row plus sibling append plus anchor in one transaction");
+    h.apply(json!([{"op":"remove","id":22}]));
+    let mut ops = vec![
+        create(
+            40,
+            "container",
+            json!({"style":{"width":320,"fontSize":10,"lineHeight":12}}),
+        ),
+        place(40, None, None),
+        create(41, "list", props(None, 0, false)),
+        place(41, Some(40), None),
+    ];
+    for i in 0..30 {
+        ops.push(create(
+            42 + i,
+            "text",
+            json!({"text":format!("inherited row {i}")}),
+        ));
+        ops.push(place(42 + i, Some(41), None));
+    }
+    h.apply(json!(ops));
+    h.draw();
+    assert_eq!(h.query(42)["painted"]["bounds"]["height"], 12.);
+    h.command(41, json!({"type":"end"}));
+    h.draw();
+    let anchor = h.command_op(41, json!({"type":"scrollTo","index":1,"offset":-20}));
+    h.apply(json!([
+        {"op":"props","id":40,"props":{"style":{"width":320,"fontSize":32,"lineHeight":40}}},
+        anchor
+    ]));
+    h.draw();
+    assert_eq!(h.query(42)["painted"]["bounds"]["height"], 40.);
+    assert_eq!(
+        h.query(43)["painted"]["bounds"]["y"],
+        20.,
+        "an inherited font change must invalidate the cached preceding height"
+    );
+    println!("PASS inherited font change and same-commit negative anchor");
 }
