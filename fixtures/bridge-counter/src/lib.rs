@@ -11,6 +11,8 @@ use std::time::Duration;
 mod interaction;
 #[cfg(feature = "interaction-tests")]
 pub use interaction::{begin_worker_stall, finish_worker_stall, native_probe_done};
+#[cfg(feature = "interaction-tests")]
+mod lifecycle;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -131,6 +133,8 @@ fn register() {
         gpui_react_controls::register(registry)?;
         #[cfg(feature = "interaction-tests")]
         interaction::register(registry)?;
+        #[cfg(feature = "interaction-tests")]
+        lifecycle::register(registry)?;
         registry.register(
             Component::<Counter>::new("counter")
                 .events()

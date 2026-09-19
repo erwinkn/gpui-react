@@ -16,6 +16,9 @@ use std::{
 // happens inside the interval in which the worker cannot run React or callbacks.
 static BUSY: AtomicBool = AtomicBool::new(false);
 static DONE: AtomicBool = AtomicBool::new(false);
+pub(super) fn worker_stalled() -> bool {
+    BUSY.load(Ordering::SeqCst)
+}
 #[napi_derive::napi]
 pub fn begin_worker_stall() {
     DONE.store(false, Ordering::SeqCst);

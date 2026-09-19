@@ -94,8 +94,11 @@ holds no Rust tree. The window starts hidden and is shown inactive after the
 first applied transaction and native draw. `show: false` keeps it hidden. This
 API does not activate the app. Closing the native window, unmounting the root,
 or worker failure ends the session. Worker attachment has a 10-second deadline;
-shutdown allows two seconds for worker cleanup before termination. These limits
-match the tested earlier host, but broader lifecycle coverage remains pending.
+shutdown allows two seconds for worker cleanup before termination. A responsive
+worker runs React effect and process exit cleanup. A blocked worker cannot run
+that cleanup; native resources still close. SIGINT and SIGTERM request graceful
+native shutdown and let `runApplication` return. After the host ends, default
+process signal behavior applies. Per-signal JS listeners are not forwarded.
 
 Use static binary paths and include both entries in a Bun compilation. The
 [counter fixture](../../fixtures/bridge-counter/README.md) contains source and

@@ -109,6 +109,15 @@ impl NativeHost {
         let root = app
             .update(|cx| window.entity(cx))
             .map_err(|e| Error::from_reason(e.to_string()))?;
+        let closing_root = root.downgrade();
+        app.update(|cx| {
+            cx.update_window(window.into(), |_, window, _| {
+                window.on_close(move |window, cx| {
+                    let _ = closing_root.update(cx, |host, cx| host.clear(window, cx));
+                });
+            })
+        })
+        .map_err(|e| Error::from_reason(e.to_string()))?;
         RUNNING.with(|active| *active.borrow_mut() = true);
         Ok(Self {
             id,
@@ -136,6 +145,7 @@ impl NativeHost {
 
     #[napi]
     pub fn run(&self) -> Result<String> {
+        let _signals = super::signals::HostSignals::new(&self.session)?;
         let state = self
             .state
             .borrow_mut()

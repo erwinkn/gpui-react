@@ -69,3 +69,26 @@ presentation, frame rate, or OS input-to-photon latency. Keystrokes use GPUI's
 native dispatch and simulated IME path, not a system-wide event injector.
 The test flags and driver are compiled only into this fixture with
 `interaction-tests`; the production bridge has no test input API.
+
+## Shutdown and failure
+
+The same optional test build runs `lifecycle-test.ts` against source entries
+and a separate compiled executable after relocation. It covers normal unmount,
+SIGINT, SIGTERM, a blocked worker, native window removal, event-queue overflow,
+worker failure after mount, early worker exit, and default SIGTERM behavior
+after the host ends. Each case records `mounted`, `unmount`, and `drop` to a
+temporary file and requires each native cleanup step exactly once.
+
+Responsive workers must run both layout-effect and passive-effect cleanup,
+followed by their process exit handler. A blocked worker cannot run React
+cleanup. The test verifies that the launcher terminates it and still releases
+native resources. Readiness uses a temporary file because worker console output
+can wait for the launcher's blocked JS loop. The test only signals its own child
+processes and removes its temporary files.
+
+Run the source cases alone after the optional native build:
+
+```sh
+bun fixtures/bridge-counter/lifecycle-test.ts
+bun run --cwd fixtures/bridge-counter typecheck
+```

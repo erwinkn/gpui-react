@@ -28,11 +28,28 @@ before acknowledgements that retire their callback subscriptions.
 Windows remain inactive. The current test evidence covers source and compiled
 Bun workers, relocation, repeated host startup, missing/failed workers, malformed
 component props, and native executor progress during a blocked worker. Signal
-handling and complete distribution are still required before release. The
+and shutdown tests also cover the cases below. Complete distribution remains
+required before release. The
 counter fixture's optional `interaction-tests` build also checks native typing,
 selection, undo, IME, scroll, hover, caret and animated pixels during a blocked
 worker. Its source and relocated executable use the same production channel.
 Test-only native dispatch and image capture stay in the fixture.
+
+`SIGINT` and `SIGTERM` request native shutdown while `NativeHost::run` owns the
+main thread. A native signal reader wakes the host without a JavaScript callback.
+The launcher gives a responsive worker time to run React effect and exit cleanup.
+After two seconds it terminates a blocked worker, which cannot run that cleanup.
+Native `unmounting` and owned resource destruction still run. Signals use their
+default process behavior after the host ends; per-signal JS handlers are not
+forwarded by this API. A signal that requests graceful shutdown lets
+`runApplication` return normally.
+
+The host registers GPUI's `Window::on_close` callback. It clears the mounted
+native components while the window and app remain available, on both direct
+window removal and application shutdown. Waiting until the native loop returns
+is too late because GPUI has already destroyed those windows. Worker failure
+and event-queue overflow use the same cleanup path. Overflow remains an explicit
+failure, rather than a graceful result or silent loss of events.
 
 ```sh
 cargo test --manifest-path crates/gpui-react-host/Cargo.toml --release

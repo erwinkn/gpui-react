@@ -127,5 +127,5 @@ export async function runApplication(bindings: Bindings, entry: string | URL, op
     }
   }
   if (failure) throw failure
-  if (reason !== "React root unmounted" && reason !== "Native window closed") throw Error(reason)
+  if (reason !== "React root unmounted" && reason !== "Native window closed" && reason !== "Process signal 2" && reason !== "Process signal 15") throw Error(reason)
 }

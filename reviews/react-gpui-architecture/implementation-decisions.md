@@ -226,3 +226,32 @@ old input revision was rejected afterward. No GPUI source change was needed.
 I stand behind this checkpoint. Signal and shutdown cases, inherited list
 geometry, document text services, external consumer fixtures, broader
 performance measurements, and distribution remain required work.
+
+## Shutdown and resource lifetime checkpoint
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Retain one native signal reader for the process and a weak reference to the active session. | Unregister handlers after each host, or depend on JS signal listeners. | Medium | The API takes ownership of SIGINT and SIGTERM handling after first use. It does not forward custom JS listeners. The old host already used this method because removing signal-hook's final action can leave the signal ignored. Tests verify graceful active-host shutdown and default SIGTERM behavior afterward. |
+| Treat active-host SIGINT and SIGTERM as graceful completion of `runApplication`. | Reject the launcher promise or preserve shell signal exit status. | High | Callers that require a signal exit status must set it themselves. This preserves the earlier host's contract, including worker cleanup. A real test first ended directly with SIGTERM before cleanup. |
+| Add the general GPUI `Window::on_close` callback. | Use only `on_window_should_close` plus an app-quit handler, or attempt native cleanup after the loop returns. | High | A should-close handler does not cover direct `remove_window`. After the loop, the window is already gone. The signal regression recorded `mounted, drop` and missed `unmount`. The source and upstream issue search showed no existing live-window close callback. The new hook covers native removal and shutdown without a renderer-specific GPUI dependency. |
+| Make close callbacks synchronous, persistent for the window lifetime, and one-shot. | Add cancelable or asynchronous observer machinery. | Medium | Long cleanup can delay window close. Callbacks registered after closing starts do not run, and callbacks cannot cancel closure. Components should cancel window-dependent tasks here; longer app-level shutdown can use GPUI's existing app-quit mechanism. These limits are documented. |
+| Run the close callback after the removing update releases its root borrow, but before removing the window. | Invoke it immediately inside `remove_window`. | High | Immediate invocation could try to borrow a root that is still handling an event or command. GPUI tests update the root from the callback and require cleanup before the existing window-closed notification. |
+| Capture the bridge root weakly in the native close callback. | Add another owner of the whole host. | High | The runtime's existing root handle keeps it alive until teardown. The callback adds no cycle or second tree. It calls the same explicit `Host::clear` used by normal unmount. |
+| Use temporary file records for test readiness and lifetime. | Wait for worker console output or infer cleanup from successful exit. | High | Worker console output can wait for the main JS thread while AppKit owns it. The first test attempt waited without sending a signal; this was a test defect, not a runtime failure. File readiness then exposed the actual signal and unmount failures. |
+| Terminate a blocked worker after the existing two-second grace period. | Wait indefinitely for React cleanup or pretend it ran. | High | React cleanup cannot execute while JS is blocked. Tests require native cleanup but explicitly do not claim React effect cleanup in those cases. Responsive workers must run layout and passive cleanup and the process exit handler. |
+| Exercise event overflow through a native producer of 10,000 events. | Only test the queue data structure. | High | This intentionally exceeds the queue during one native operation. It does not prove frame fairness under large atomic work. The source and compiled cases require an explicit overflow failure and exactly-once native teardown. |
+
+Validation passed all 278 GPUI library tests, three host queue tests, fourteen
+React and transport tests, strict host and fixture Clippy checks, and strict
+fixture TypeScript checks. The complete source and relocated compiled fixture
+suite passed. Both forms cover normal unmount, SIGINT, SIGTERM, blocked-worker
+signal and native window close, event overflow, worker failure after mount,
+early worker exit, and default SIGTERM behavior after the host ends. Native
+lifetime records require `mounted`, `unmount`, and `drop`, each exactly once.
+The existing list, input, interaction, repeated-session, and startup-failure
+fixture checks also pass with the new GPUI close hook.
+
+I stand behind this checkpoint. The goal remains active. Required next work
+includes inherited list geometry, document text services, external editor/diff
+and GPU component fixtures, broader performance measurements, and installed
+package distribution. No Cherry or Pierre component files were changed.

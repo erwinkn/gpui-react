@@ -14,6 +14,8 @@ use std::{
 
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+mod signals;
 pub use gpui_react;
 #[cfg(target_os = "macos")]
 pub use macos::*;

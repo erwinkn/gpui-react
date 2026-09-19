@@ -22,6 +22,7 @@ napi-derive = "3"
 [target.'cfg(target_os = "macos")'.dependencies]
 gpui_macos = { path = "../../zed/crates/gpui_macos", default-features = false, features = ["font-kit"] }
 objc = "0.2"
+signal-hook = "0.3"
 
 [build-dependencies]
 napi-build = "2"

@@ -31,6 +31,7 @@ try {
     const interaction = await run("bun", [join(fixture, "host.ts")], undefined, "interaction")
     assert.match(interaction, /Native interaction during blocked JavaScript passed/)
     console.log("PASS source interaction worker", interaction.trim())
+    console.log("PASS source lifecycle", (await run("bun", [join(fixture, "lifecycle-test.ts")])).trim())
   }
   const repeat = await run("bun", [join(fixture, "host.ts")], undefined, "repeat")
   assert.equal(repeat.match(/Native counter state after worker stall/g)?.length, 3)
@@ -55,6 +56,12 @@ try {
     const interaction = await run(moved, [], tmpdir(), "interaction")
     assert.match(interaction, /Native interaction during blocked JavaScript passed/)
     console.log("PASS relocated interaction worker", interaction.trim())
+    const lifecycleBinary = join(temporary, "lifecycle-build", "lifecycle")
+    await run("bun", ["build", "--compile", join(fixture, "lifecycle-host.ts"), join(fixture, "lifecycle-worker.tsx"), "--outfile", lifecycleBinary], temporary)
+    const lifecycleMoved = join(temporary, "lifecycle-relocated", "lifecycle")
+    await cp(lifecycleBinary, lifecycleMoved, { recursive: true })
+    await rm(join(temporary, "lifecycle-build"), { recursive: true, force: true })
+    console.log("PASS relocated lifecycle", (await run("bun", [join(fixture, "lifecycle-test.ts"), lifecycleMoved], tmpdir())).trim())
   }
 } finally {
   await rm(temporary, { recursive: true, force: true })

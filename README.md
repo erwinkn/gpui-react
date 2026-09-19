@@ -46,7 +46,9 @@ worker fixtures verify first-frame anchors and keyed native identity. The
 optional native interaction driver also checks typing, IME, scrolling, hover,
 caret and animated pixels while the React worker is blocked. Delayed input
 events retain their original callback after React replaces it. This remains
-an implementation checkpoint: document text services, broader consumer cases,
+an implementation checkpoint. Shutdown checks cover signals, a blocked worker,
+window close, worker failure, event overflow, and native cleanup before the
+window is destroyed. Document text services, broader consumer cases,
 performance work, and release distribution are in progress. The existing API
 below remains usable. See the
 [accepted architecture and scenarios](./reviews/react-gpui-architecture/scenario-matrix.md).
