@@ -24,7 +24,8 @@ and an asynchronous transaction transport. It does not import the existing
 GPUiX renderer or maintain a worker-side Rust tree.
 
 The new macOS host runs a compiled component composition with an explicit Bun
-application worker. The [counter fixture](./fixtures/bridge-counter/README.md)
+application worker. The host is a Rust library; only the application composition
+emits the native `.node` binary. The [counter fixture](./fixtures/bridge-counter/README.md)
 tests props, events, commands, queries, worker stalls, repeated startup, startup
 failure, invalid commits, and a relocated compiled executable. The
 [standard controls](./crates/gpui-react-controls/README.md) now include an ordinary

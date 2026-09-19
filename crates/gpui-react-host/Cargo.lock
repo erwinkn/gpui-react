@@ -1335,7 +1335,6 @@ dependencies = [
  "gpui-react",
  "gpui_macos",
  "napi",
- "napi-build",
  "napi-derive",
  "objc",
  "serde",

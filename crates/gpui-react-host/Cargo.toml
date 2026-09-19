@@ -7,9 +7,6 @@ description = "Native-owned application host for gpui-react"
 
 [workspace]
 
-[lib]
-crate-type = ["rlib", "cdylib"]
-
 [dependencies]
 gpui-react = { path = "../gpui-react" }
 anyhow = "1"
@@ -23,9 +20,6 @@ napi-derive = "3"
 gpui_macos = { path = "../../zed/crates/gpui_macos", default-features = false, features = ["font-kit"] }
 objc = "0.2"
 signal-hook = "0.3"
-
-[build-dependencies]
-napi-build = "2"
 
 [profile.release]
 debug = 1

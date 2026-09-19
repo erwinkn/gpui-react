@@ -5,6 +5,13 @@ This crate supplies the macOS AppKit loop and N-API worker channel for
 The worker retains only a session handle and queued typed transactions. It does
 not retain a Rust description tree or live GPUI objects.
 
+The host is a Rust library. Only the application composition emits a `cdylib`
+and runs `napi_build::setup()` in its build script. This avoids an unqualified
+host library artifact overwriting another feature graph in a shared Cargo
+target directory. Run `bun scripts/check-bridge-builds.ts` from the repository
+root to alternate standalone host and test-composition builds in one directory.
+Set `CARGO_TARGET_DIR` to reuse an existing release target.
+
 A composition crate re-exports this crate's N-API methods and calls
 `register_components` from its module initializer. The function it registers
 fills a new `gpui-react::Registry` for each native host. Its ordinary GPUI

@@ -255,3 +255,22 @@ I stand behind this checkpoint. The goal remains active. Required next work
 includes inherited list geometry, document text services, external editor/diff
 and GPU component fixtures, broader performance measurements, and installed
 package distribution. No Cherry or Pierre component files were changed.
+
+## Host library artifact checkpoint
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Build `gpui-react-host` as a Rust library only; the application composition owns the `cdylib`. | Keep both library types on the host or require separate target directories. | High | Building the standalone host and the test composition in one target directory reused an unqualified `libgpui_react_host.rlib` from another GPUI feature graph. The composition then failed with incompatible types from the same source paths. The ordinary Rust library uses qualified artifacts and avoids that collision. |
+| Remove the host's N-API build script and leave `napi_build::setup()` in the composition. | Keep linker arguments on a crate that no longer emits a dynamic library. | High | Cargo warned that the host's `rustc-cdylib-link-arg` had no target. The composition already supplies those arguments. Its source and compiled runtime tests confirm the N-API exports still link and load. |
+| Add a build-graph regression that alternates application and standalone host builds in one target directory. | Clear Cargo output before every test. | High | Clearing output would hide the original collision. The regression uses normal cached builds, including the fixture's optional GPUI test features. |
+
+The failing composition build was retained in
+`/tmp/bridge-document-composition-build.log`. The alternating-build regression,
+three host tests, and strict host Clippy checks pass. The full source and
+relocated fixture suite passes, including native interaction while JavaScript
+is blocked and shutdown/resource cleanup. No GPUI source change was needed.
+
+I stand behind this checkpoint. It fixes the composition boundary without
+adding a second runtime or a default native addon. The user authorized tested
+commits without further approval. Document work and the remaining consumer,
+performance, and distribution requirements stay active.
