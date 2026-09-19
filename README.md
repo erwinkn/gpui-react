@@ -26,9 +26,14 @@ GPUiX renderer or maintain a worker-side Rust tree.
 The new macOS host runs a compiled component composition with an explicit Bun
 application worker. The [counter fixture](./fixtures/bridge-counter/README.md)
 tests props, events, commands, queries, worker stalls, repeated startup, startup
-failure, invalid commits, and a relocated compiled executable. This remains an
-implementation checkpoint: native controls, full component regression coverage,
-and release distribution are in progress. The existing API below remains usable. See the
+failure, invalid commits, and a relocated compiled executable. The first
+[standard native control](./crates/gpui-react-controls/README.md) is an ordinary
+GPUI input with a typed [React wrapper](./packages/bridge-controls/README.md).
+Native state owns its text, selection, IME, undo, and caret. Asynchronous
+replacement commands require the current revision; delayed props do not erase
+new typing. GPU tests cover platform input, accessibility, and nested scrolling.
+This remains an implementation checkpoint: the wider control library, component
+regression coverage, and release distribution are in progress. The existing API below remains usable. See the
 [accepted architecture and scenarios](./reviews/react-gpui-architecture/scenario-matrix.md).
 
 ### Native-owned application loop on macOS

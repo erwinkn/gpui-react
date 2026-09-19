@@ -89,3 +89,37 @@ callback route changes do not request a redraw.
 I stand behind the tested native owner and host checkpoint. It is still not the
 complete requested replacement: controls, input/IME, lists, text services,
 consumer examples, platform coverage and package release remain active work.
+
+## Native input checkpoint
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Use construction-only `initialValue` and `initialMultiline`; use revision-checked commands for later text replacement. | Recreate a controlled `value` prop with an echo/acknowledgement queue. | Medium | Applications that format every keystroke need an explicit stale-result policy. Changing editing mode requires remounting. This is documented, rather than presented as React DOM input compatibility. |
+| Reject application replacement during IME composition. | Queue replacements or force composition termination. | Medium | A pending application action may need to retry after composition finishes. The control never retries a stale command itself. |
+| Reuse the existing native editor's editing algorithms in a separate controls crate. | Rewrite grapheme movement, IME ranges, selection geometry, clipboard, undo, and autoscroll. | High | This transfers real implementation constraints too: undo keeps up to 200 text snapshots, and input is not intended to replace Pierre's large-document editor. Source notices remain included. |
+| Expose a small typed style set and reject unknown fields. | Import the old renderer's broad style schema with partly unimplemented behavior. | Medium | Existing GPUiX style objects need an explicit adapter. Richer styles can be added with native tests; this checkpoint does not claim full style compatibility. |
+| Keep input properties and live state in one GPUI entity. | Retain a prop buffer plus an inner editor state entity. | High | Initial values are consumed at construction. The bridge and worker never retain another native text buffer. Undo and GPUI text-layout caches serve separate native functions. |
+| Increment the revision for selection and composition changes as well as text. | Version text alone. | High | A delayed selection-sensitive operation rejects after a caret move, even if the text is unchanged. This prevents it from replacing newer interaction state. |
+| Preserve the editor's native keyboard and mouse behavior, then fix failures against focused tests. | Copy its old assumptions without checking them, or redesign all editing behavior. | High | The input's old wheel handler blocked parents at boundaries; the GPU test failed before the fix. The old caret used wall time with a GPUI clock anchor; the deterministic test failed before that fix. |
+| Expose paint-tagged geometry as an asynchronous observation. | Force layout inside a query or copy a second text snapshot for each paint. | High | The geometry can describe an earlier revision. It has an explicit revision and is null before the first paint. |
+| Test the installed platform input handler and native GPU output on the main OS thread. | Treat command-only input tests or a mock text renderer as sufficient. | High | This validates macOS behavior in an offscreen window. It does not certify other platforms, a physical IME candidate panel, or display latency. |
+| Reject JSON numbers that overflow native `f32` style values. | Let Serde silently cast finite JSON values to infinity. | High | A failing test demonstrated `1e100` becoming infinite padding. The typed decoder now rejects it before component changes. |
+
+The checkpoint has 22 passing native control tests, a GPU-backed input scenario,
+and the production React worker fixture in source and relocated compiled forms.
+The GPU scenario checks keyboard dispatch, selection, undo, platform IME ranges,
+text pixels, accessibility values, consumed-wheel callback propagation, and parent
+boundary scrolling. The production bridge checks retained input identity, typed
+events, explicit stale-command errors, selection commands, and props that preserve
+native text. The earlier fourteen React/transport tests also pass.
+
+Defaults retained from the editor include a 500 ms caret period, a 700 ms undo
+coalescing interval, a 200-entry undo limit, and a 16 ms drag-autoscroll timer.
+They describe native editing behavior; they are not performance measurements.
+The current input emits change, selection, submit, and captured-key events.
+General focus/blur events and cross-component selection services remain later
+work, as do the larger control library, lists, rich content, consumer integration,
+and distribution. The standard controls live outside the minimal binding crate.
+
+I stand behind this input checkpoint and its stated limits. The full replacement
+is still under implementation; this checkpoint does not claim final completion.

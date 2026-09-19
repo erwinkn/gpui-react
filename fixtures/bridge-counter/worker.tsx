@@ -3,6 +3,8 @@ import { createRef, useLayoutEffect } from "react"
 import { nativeComponent, type NativeRef } from "@gpuix/bridge"
 import { attachApplication } from "@gpuix/bridge/application"
 
+import { Input, type InputRef, type InputEvent } from "@gpuix/bridge-controls"
+
 const bindings = require("./counter.node")
 if (process.env.BRIDGE_COUNTER_MODE === "startup-error") throw Error("Expected worker startup failure")
 const root = attachApplication(bindings)
@@ -45,4 +47,26 @@ root.renderSync(null)
 await root.flush()
 await increment
 assert.equal(values.at(-1), count + 5)
+// The same ordinary input is wrapped through the production worker bridge.
+const input = createRef<InputRef>()
+const inputEvents: InputEvent[] = []
+const onInput = (event: InputEvent) => inputEvents.push(event)
+root.renderSync(<Input ref={input} initialValue="native" label="Example input" onEvent={onInput} />)
+await root.flush()
+const id = input.current!.id
+const before = await input.current!.query(null)
+assert.equal(before.value, "native")
+await input.current!.command({ type: "focus" })
+await input.current!.command({ type: "replace", value: "first", expectedRevision: before.revision })
+await assert.rejects(input.current!.command({ type: "replace", value: "late", expectedRevision: before.revision }), /stale input revision/)
+root.renderSync(<Input ref={input} initialValue="stale prop" placeholder="Updated" onEvent={onInput} />)
+await root.flush()
+assert.equal(input.current!.id, id)
+const current = await input.current!.query(null)
+assert.equal(current.value, "first")
+assert.equal(inputEvents.filter(event => event.type === "change").length, 1)
+await input.current!.command({ type: "select", selection: { start: 1, end: 4 }, expectedRevision: current.revision })
+assert.deepEqual((await input.current!.query(null)).selection, { start: 1, end: 4, reversed: false })
+await input.current!.command({ type: "blur" })
+console.log("React input: native identity, ordered events, stale-command rejection, selection, and prop preservation passed")
 await root.unmount()

@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "dependencies": { "@gpuix/bridge": "workspace:*", "react": "19.2.4" },
-  "scripts": { "test": "bun test.ts" }
+  "dependencies": {
+    "@gpuix/bridge": "workspace:*",
+    "react": "19.2.4",
+    "@gpuix/bridge-controls": "workspace:*"
+  },
+  "scripts": {
+    "test": "bun test.ts"
+  }
 }

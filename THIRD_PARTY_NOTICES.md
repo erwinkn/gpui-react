@@ -31,6 +31,10 @@ behavior reviewed at
 | `packages/native/src/theme.rs` | `crates/ui/src/theme.rs` |
 | `packages/native/src/updater.rs` | [cargo-packager-updater 0.2.3](https://github.com/crabnebula-dev/cargo-packager/blob/v0.2.3/crates/updater/src/lib.rs) (MIT OR Apache-2.0). HTTP uses GPUIX `reqwest_client`, not crates.io `reqwest`. |
 
+The new `crates/gpui-react-controls` input retains these GPUI and Comet references.
+Its source notice and MIT permission text are in
+[`crates/gpui-react-controls/THIRD_PARTY_NOTICES.md`](./crates/gpui-react-controls/THIRD_PARTY_NOTICES.md).
+
 ## Example icons
 
 The chat example uses **[Lucide](https://github.com/lucide-icons/lucide)** SVG

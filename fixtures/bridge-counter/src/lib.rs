@@ -123,6 +123,7 @@ impl ReactQueries for Counter {
 #[napi_derive::module_init]
 fn register() {
     register_components(|registry| {
+        gpui_react_controls::register(registry)?;
         registry.register(
             Component::<Counter>::new("counter")
                 .events()

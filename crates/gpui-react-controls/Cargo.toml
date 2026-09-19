@@ -1,0 +1,25 @@
+[package]
+name = "gpui-react-controls"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Ordinary GPUI controls with optional React bindings"
+
+[workspace]
+
+[dependencies]
+gpui-react = { path = "../gpui-react" }
+gpui = { path = "../../zed/crates/gpui", default-features = false, features = ["font-kit"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+unicode-segmentation = "1"
+web-time = "1"
+csscolorparser = "0.8.3"
+
+[dev-dependencies]
+gpui = { path = "../../zed/crates/gpui", default-features = false, features = ["font-kit", "test-support"] }
+gpui_macos = { path = "../../zed/crates/gpui_macos", default-features = false, features = ["font-kit", "test-support"] }
+
+[profile.release]
+debug = 1
