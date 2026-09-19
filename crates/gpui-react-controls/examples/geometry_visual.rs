@@ -300,7 +300,7 @@ fn main() {
     click(&mut h, 32., 28.);
     assert_eq!(h.query(1)["menuFocused"], true);
     for (width, card, gap) in [(240., 70., 20.), (420., 140., 48.), (300., 90., 24.)] {
-        h.apply(json!([{"op":"props","id":1,"props":props(width,card,gap)}]));
+        h.apply(json!([{"op":"props","id":1,"component":"geometry","props":props(width,card,gap)}]));
         h.draw();
         let state = h.query(1);
         assert_eq!(state["open"], true);

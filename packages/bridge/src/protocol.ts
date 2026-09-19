@@ -1,13 +1,17 @@
 export type NativeProps = Record<string, unknown>
 
 export type Operation =
-  | { op: "create"; id: number; component: string; props: NativeProps; subscription: number | null }
-  | { op: "props"; id: number; props: NativeProps }
+  /** `parent` present means the node is placed by this operation; null is the root list. */
+  | { op: "create"; id: number; component: string; props: NativeProps; subscription: number | null; parent?: number | null; before?: number }
+  | { op: "props"; id: number; component: string; props: NativeProps }
   | { op: "listen"; id: number; subscription: number | null }
   | { op: "place"; parent: number | null; child: number; before: number | null }
   | { op: "remove"; id: number }
   | { op: "hidden"; id: number; hidden: boolean }
-  | { op: "command" | "query"; id: number; request: number; value: unknown }
+  | { op: "command" | "query"; id: number; component: string; request: number; value: unknown }
+  /** A style definition, referenced by later props as `style: id`. */
+  | { op: "style"; id: number; style: NativeProps }
+  | { op: "dropStyle"; id: number }
 
 export interface Transaction { version: 1; sequence: number; operations: Operation[] }
 

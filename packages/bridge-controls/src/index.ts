@@ -1,4 +1,4 @@
-import { nativeComponent, type NativeRef, type FrameInfo } from "@gpuix/bridge"
+import { nativeComponent, type NativeRef, type FrameInfo } from "@gpui-react/core"
 import { Children, createElement, type ReactNode, type Ref } from "react"
 
 export type Length = number | "100%" | "auto"
@@ -56,7 +56,7 @@ export type InputRef = NativeRef<InputCommand, null, InputSnapshot>
 export const Input = nativeComponent<InputProps, InputEvent, InputCommand, null, InputSnapshot>("input")
 
 export interface Rect { x: number; y: number; width: number; height: number }
-export type { FrameInfo } from "@gpuix/bridge"
+export type { FrameInfo } from "@gpui-react/core"
 export interface Painted { bounds: Rect; revision: number; frame: FrameInfo | null }
 export interface ContainerProps {
   style?: Style
@@ -65,6 +65,8 @@ export interface ContainerProps {
   blockMouse?: boolean
   focusable?: boolean
   label?: string
+  /** Record painted bounds for `painted` in queries. Off by default. */
+  measure?: boolean
 }
 export type ContainerEvent =
   | { type: "click"; x: number; y: number }
@@ -83,6 +85,8 @@ export interface TextProps {
   searchable?: boolean
   /** Absolute match index before this logical text in a virtualized source. */
   matchIndexOffset?: number
+  /** Record painted bounds for `painted` in queries. Off by default. */
+  measure?: boolean
 }
 export interface TextSnapshot { text: string; revision: number; painted: Painted | null }
 export type TextRef = NativeRef<never, null, TextSnapshot>

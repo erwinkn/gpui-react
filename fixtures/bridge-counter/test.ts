@@ -6,7 +6,7 @@ import { spawn } from "node:child_process"
 
 async function run(command: string, args: string[], cwd?: string, mode?: string): Promise<string> {
   return new Promise((resolveResult, reject) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, GPUIX_BACKGROUND: "1", BRIDGE_COUNTER_MODE: mode ?? "" }, stdio: ["ignore", "pipe", "pipe"] })
+    const child = spawn(command, args, { cwd, env: { ...process.env, BRIDGE_COUNTER_MODE: mode ?? "" }, stdio: ["ignore", "pipe", "pipe"] })
     let output = ""
     child.stdout.on("data", chunk => { output += chunk })
     child.stderr.on("data", chunk => { output += chunk })

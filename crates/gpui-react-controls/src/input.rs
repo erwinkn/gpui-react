@@ -22,7 +22,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 use web_time::Instant;
 
-use crate::style::{Color, Style as ControlStyle};
+use crate::style::{Color, SharedStyle as ControlStyle};
 use gpui_react::{ReactCommands, ReactEvents, ReactQueries, ReactView};
 use serde::{Deserialize, Serialize};
 

@@ -7,15 +7,20 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 struct Props {}
 struct Capture {
-    children: Vec<AnyView>,
+    children: Option<Children>,
     path: Option<std::path::PathBuf>,
 }
 impl Render for Capture {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let path = self.path.take();
+        let children = self
+            .children
+            .as_ref()
+            .map(|children| children.render_all(window, cx))
+            .unwrap_or_default();
         div()
             .size_full()
-            .children(self.children.clone())
+            .children(children)
             .on_painted(move |_, window, _| {
                 if let Some(path) = path.clone() {
                     window.on_draw_complete(move |window, _| {
@@ -33,15 +38,15 @@ impl ReactView for Capture {
     type Props = Props;
     fn create(_: Props, _: &mut Window, _: &mut Context<Self>) -> Self {
         Self {
-            children: vec![],
+            children: None,
             path: std::env::var_os("BRIDGE_DEMO_IMAGE").map(Into::into),
         }
     }
     fn set_props(&mut self, _: Props, _: &mut Window, _: &mut Context<Self>) {}
 }
 impl ReactChildren for Capture {
-    fn set_children(&mut self, children: Vec<AnyView>, _: &mut Window, cx: &mut Context<Self>) {
-        self.children = children;
+    fn set_children(&mut self, children: Children, _: &mut Window, cx: &mut Context<Self>) {
+        self.children = Some(children);
         cx.notify();
     }
 }

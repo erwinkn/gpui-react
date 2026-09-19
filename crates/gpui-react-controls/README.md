@@ -1,7 +1,10 @@
 # Native controls
 
-This crate contains ordinary GPUI controls. It does not depend on the old GPUiX
-renderer. Controls include `Container`, `Text`, `VirtualList`, `Document`, and `Input`. One input entity owns its text, selection,
+This crate contains the standard controls. `Container` and `Text` are host-owned
+data rendered into ordinary
+GPUI elements each frame; equal styles share one value per app through
+`shared_style`. `VirtualList`, `Document`, and `Input` are ordinary GPUI
+entities. One input entity owns its text, selection,
 composition, undo history, scroll position, and caret. GPUI computes its layout
 and handles keyboard, mouse, clipboard, and platform input-method operations.
 
@@ -13,7 +16,7 @@ replace the control's `Render` implementation.
 
 For React, call `gpui_react_controls::register(registry)` from the composition's
 registration function. This registers `input`, `container`, `text`, `list`, and `document` with their supported capabilities.
-Import its wrapper from `@gpuix/bridge-controls`. See the
+Import its wrapper from `@gpui-react/controls`. See the
 [JavaScript contract](../../packages/bridge-controls/README.md) for every prop,
 event, command, and style field.
 
@@ -74,8 +77,9 @@ The defaults are selectable and searchable. Outside `Document`, the helper
 renders ordinary text without a document hitbox or registry entry. It also
 supplies a native accessibility label value.
 
-Use `Document::new(props, cx)` in native GPUI code. `ReactChildren::set_children`
-sets ordinary native view children; `ReactView::set_props` updates the props.
+Use `Document::new(props, cx)` in native GPUI code. `set_native_children`
+composes native views ahead of any React children; `ReactView::set_props`
+updates the props.
 `apply_command`, `snapshot`, and `DocumentEvent` are also available directly.
 `Search::new(SearchQuery { .. })` validates a query; its active index, colors,
 and match offset are separate fields. These types live in `document`.

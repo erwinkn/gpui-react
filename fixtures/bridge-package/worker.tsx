@@ -1,13 +1,13 @@
 import assert from "node:assert/strict"
 import { createRef, useLayoutEffect } from "react"
-import bindings from "@gpuix/bridge-runtime"
-import { nativeComponent } from "@gpuix/bridge"
-import { attachApplication } from "@gpuix/bridge/application"
+import bindings from "@gpui-react/runtime"
+import { nativeComponent } from "@gpui-react/core"
+import { attachApplication } from "@gpui-react/core/application"
 import {
   Container, Document, Input, List, Text,
   type ContainerRef, type DocumentRef, type DocumentEvent,
   type InputRef, type InputEvent, type ListRef, type TextRef,
-} from "@gpuix/bridge-controls"
+} from "@gpui-react/controls"
 
 const root = attachApplication(bindings)
 if (process.env.BRIDGE_PACKAGE_MODE === "unknown") {
@@ -30,14 +30,14 @@ function App({ initialValue }: { initialValue: string }) {
     focused = input.current!.command({ type: "focus" })
     anchored = list.current!.command({ type: "scrollTo", index: 50_000, offset: 3 })
   }, [])
-  return <Container ref={container} style={{ width: 400, height: 320, color: "white" }}>
+  return <Container ref={container} measure style={{ width: 400, height: 320, color: "white" }}>
     <Document ref={document} search={{ query: "token" }} onEvent={event => documentEvents.push(event)} style={{ width: 400, height: 50 }}>
       <Text textKey="greeting">Hello {"😀"}! token</Text>
       <Text textKey="second">another token</Text>
     </Document>
     <Input ref={input} initialValue={initialValue} label="Installed input" onEvent={event => inputEvents.push(event)} style={{ width: 400, height: 40 }} />
     <List ref={list} itemCount={100_000} windowStart={49_998} estimatedItemHeight={20} style={{ width: 400, height: 100 }}>
-      {Array.from({ length: 60 }, (_, local) => <Text key={local} ref={local === 2 ? row : undefined} style={{ height: 20, lineHeight: 20 }} text={`row ${49_998 + local}`} />)}
+      {Array.from({ length: 60 }, (_, local) => <Text key={local} ref={local === 2 ? row : undefined} measure={local === 2} style={{ height: 20, lineHeight: 20 }} text={`row ${49_998 + local}`} />)}
     </List>
   </Container>
 }

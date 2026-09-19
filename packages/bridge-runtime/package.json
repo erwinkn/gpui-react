@@ -1,20 +1,41 @@
 {
-  "name": "@gpuix/bridge-runtime",
+  "name": "@gpui-react/runtime",
   "version": "0.1.0",
-  "type": "module",
-  "license": "Apache-2.0",
   "description": "Default macOS native runtime for the asynchronous GPUI React bridge",
+  "type": "module",
   "exports": {
     ".": {
       "browser": "./browser.js",
-      "import": {"types": "./index.d.ts", "default": "./index.js"},
-      "require": {"types": "./binding.d.cts", "default": "./binding.cjs"},
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./index.js"
+      },
+      "require": {
+        "types": "./binding.d.cts",
+        "default": "./binding.cjs"
+      },
       "default": "./index.js"
     },
     "./package.json": "./package.json"
   },
-  "files": ["index.js", "index.d.ts", "binding.cjs", "binding.d.cts", "browser.js", "gpui-react-runtime.darwin-arm64.node", "README.md", "LICENSE"],
-  "scripts": {"build": "bun ../../scripts/build-bridge-runtime.ts"},
-  "peerDependencies": {"@gpuix/bridge": "^0.1.0"},
-  "devDependencies": {"@gpuix/bridge": "workspace:*"}
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "binding.cjs",
+    "binding.d.cts",
+    "browser.js",
+    "gpui-react-runtime.darwin-arm64.node",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun ../../scripts/build-bridge-runtime.ts"
+  },
+  "peerDependencies": {
+    "@gpui-react/core": "^0.1.0"
+  },
+  "devDependencies": {
+    "@gpui-react/core": "workspace:*"
+  },
+  "license": "Apache-2.0"
 }

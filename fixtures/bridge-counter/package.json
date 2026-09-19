@@ -1,17 +1,17 @@
 {
-  "name": "@gpuix/bridge-counter-example",
+  "name": "@gpui-react/counter-example",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "dependencies": {
-    "@gpuix/bridge": "workspace:*",
-    "react": "19.2.4",
-    "@gpuix/bridge-controls": "workspace:*",
-    "@gpuix/bridge-gpu-example": "workspace:*"
-  },
   "scripts": {
     "test": "bun test.ts",
     "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@gpui-react/core": "workspace:*",
+    "@gpui-react/controls": "workspace:*",
+    "@gpui-react/gpu-example": "workspace:*",
+    "react": "19.2.4"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",

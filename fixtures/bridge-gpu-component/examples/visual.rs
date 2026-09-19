@@ -10,7 +10,7 @@ use support::*;
 fn props(width: f32, height: f32) -> Value {
     json!({"initialColor":[2,0,0,0.25],"radius":8,"style":{"width":width,"height":height,"shrink":0,"color":"white"}})
 }
-fn texture(h: &mut Harness, id: u64) -> Entity<TextureView> {
+fn texture(h: &mut Harness, id: u32) -> Entity<TextureView> {
     h.window
         .update(&mut h.cx, |host, _, _| {
             host.view(id)
@@ -78,7 +78,7 @@ fn main() {
     assert!(h.take_events().iter().any(|e| e["type"] == "click"));
     let mut label = props(64., 48.);
     label["label"] = json!("external text");
-    h.apply(json!([{"op":"props","id":3,"props":label}]));
+    h.apply(json!([{"op":"props","id":3,"component":"example-texture","props":label}]));
     h.draw();
     assert!(
         h.query(1)["text"]
@@ -102,7 +102,7 @@ fn main() {
         3,
         json!({"type":"transition","to":[0.5,0,0,0.5],"durationMs":0}),
     );
-    h.apply(json!([{"op":"props","id":3,"props":props(32.,32.)}]));
+    h.apply(json!([{"op":"props","id":3,"component":"example-texture","props":props(32.,32.)}]));
     h.draw();
     assert!(
         old.upgrade().is_some(),
@@ -153,7 +153,7 @@ fn main() {
     assert_eq!(h.query(3)["color"], stopped);
     let mut reduced = props(32., 32.);
     reduced["reducedMotion"] = json!(true);
-    h.apply(json!([{"op":"props","id":3,"props":reduced}]));
+    h.apply(json!([{"op":"props","id":3,"component":"example-texture","props":reduced}]));
     h.command(
         3,
         json!({"type":"transition","to":[1,0,0,1],"durationMs":5000}),
@@ -175,7 +175,7 @@ fn main() {
         "PASS native animation, retarget, cancellation, reduced motion, and idle frame requests"
     );
 
-    h.apply(json!([{"op":"props","id":3,"props":props(32.,32.)}]));
+    h.apply(json!([{"op":"props","id":3,"component":"example-texture","props":props(32.,32.)}]));
     h.command(
         3,
         json!({"type":"transition","to":[0,0,1,1],"durationMs":5000}),

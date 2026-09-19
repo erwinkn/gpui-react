@@ -45,22 +45,27 @@ fn stalled() -> Result<()> {
 #[serde(deny_unknown_fields)]
 struct Props {}
 struct Driver {
-    children: Vec<AnyView>,
+    children: Option<Children>,
     task: Option<Task<()>>,
     report: Option<Value>,
     animation: Rc<Cell<f32>>,
     hover_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
 }
 impl Render for Driver {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let value = self.animation.clone();
         let bounds = self.hover_bounds.clone();
+        let children = self
+            .children
+            .as_ref()
+            .map(|children| children.render_all(window, cx))
+            .unwrap_or_default();
         div()
             .size_full()
             .flex()
             .flex_col()
             .bg(rgb(0x101010))
-            .children(self.children.clone())
+            .children(children)
             .child(
                 div()
                     .id("hover-probe")
@@ -91,7 +96,7 @@ impl ReactView for Driver {
     type Props = Props;
     fn create(_: Props, _: &mut Window, _: &mut Context<Self>) -> Self {
         Self {
-            children: vec![],
+            children: None,
             task: None,
             report: None,
             animation: Rc::new(Cell::new(0.)),
@@ -104,8 +109,8 @@ impl ReactView for Driver {
     }
 }
 impl ReactChildren for Driver {
-    fn set_children(&mut self, children: Vec<AnyView>, _: &mut Window, cx: &mut Context<Self>) {
-        self.children = children;
+    fn set_children(&mut self, children: Children, _: &mut Window, cx: &mut Context<Self>) {
+        self.children = Some(children);
         cx.notify();
     }
 }
@@ -113,34 +118,29 @@ impl ReactCommands for Driver {
     type Command = ();
     fn command(&mut self, _: (), window: &mut Window, cx: &mut Context<Self>) -> Result<()> {
         ensure!(self.task.is_none(), "driver already started");
-        let input = self
+        let children = self
             .children
-            .first()
-            .unwrap()
             .clone()
-            .downcast::<Input>()
-            .ok()
-            .unwrap();
-        let list = self
-            .children
-            .get(1)
-            .unwrap()
-            .clone()
-            .downcast::<VirtualList>()
-            .ok()
-            .unwrap();
-        let texture = self
-            .children
-            .get(2)
-            .unwrap()
-            .clone()
-            .downcast::<TextureView>()
-            .ok()
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("driver has no children"))?;
         let animation = self.animation.clone();
         let bounds = self.hover_bounds.clone();
         self.task = Some(cx.spawn_in(window, async move |driver, cx| {
-            let report = run(input, list, texture, animation, bounds, cx).await;
+            // The host is being updated while this command runs; resolve the
+            // child entities once the transaction has finished.
+            let views = cx.update(|_, cx| {
+                (
+                    children.view(0, cx).and_then(|v| v.downcast::<Input>().ok()),
+                    children.view(1, cx).and_then(|v| v.downcast::<VirtualList>().ok()),
+                    children.view(2, cx).and_then(|v| v.downcast::<TextureView>().ok()),
+                )
+            });
+            let report = match views {
+                Ok((Some(input), Some(list), Some(texture))) => {
+                    run(input, list, texture, animation, bounds, cx).await
+                }
+                Ok(_) => Err(anyhow::anyhow!("driver children must be input, list, texture")),
+                Err(error) => Err(error),
+            };
             let report = match report {
                 Ok(value) => value,
                 Err(error) => json!({"error":format!("{error:#}")}),

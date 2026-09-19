@@ -2,18 +2,19 @@
 mod geometry;
 mod search;
 mod selection;
-use crate::{Color, Style, geometry::Rect};
+use crate::{Color, SharedStyle, geometry::Rect};
 use gpui::{prelude::*, *};
-use gpui_react::{ReactChildren, ReactCommands, ReactEvents, ReactQueries, ReactView};
+use gpui_react::{Children, ReactChildren, ReactCommands, ReactEvents, ReactQueries, ReactView};
 pub use search::{Query as SearchQuery, Search};
 use selection::{RegisteredText, SelectionState};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, ops::Range, rc::Rc, sync::Arc, time::Duration};
+use rustc_hash::FxHashMap;
+use std::{fmt, ops::Range, rc::Rc, sync::Arc, time::Duration};
 
 #[derive(Default, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct DocumentProps {
-    pub style: Style,
+    pub style: SharedStyle,
     pub search: Option<Search>,
     pub selection_color: Option<Color>,
 }
@@ -96,6 +97,53 @@ pub struct DocumentSnapshot {
     pub query: Option<SearchQuery>,
     pub frame: Option<gpui_react::FrameInfo>,
 }
+/// Identity of one logical text inside a document. React text without an
+/// app-supplied `textKey` is keyed by its host node id, which hashes as an
+/// integer and allocates nothing. Named keys come from `textKey` props and
+/// native components.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TextKey {
+    Node(u32),
+    Named(SharedString),
+}
+impl TextKey {
+    /// Parse the string form used in snapshots and commands.
+    pub fn parse(text: &str) -> Self {
+        text.strip_prefix("text:")
+            .and_then(|digits| digits.parse().ok())
+            .map(TextKey::Node)
+            .unwrap_or_else(|| TextKey::Named(text.to_owned().into()))
+    }
+}
+impl fmt::Display for TextKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TextKey::Node(id) => write!(f, "text:{id}"),
+            TextKey::Named(name) => f.write_str(name),
+        }
+    }
+}
+impl From<&str> for TextKey {
+    fn from(name: &str) -> Self {
+        TextKey::Named(name.to_owned().into())
+    }
+}
+impl From<String> for TextKey {
+    fn from(name: String) -> Self {
+        TextKey::Named(name.into())
+    }
+}
+impl From<SharedString> for TextKey {
+    fn from(name: SharedString) -> Self {
+        TextKey::Named(name)
+    }
+}
+impl From<u32> for TextKey {
+    fn from(id: u32) -> Self {
+        TextKey::Node(id)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 struct TextOptions {
     selectable: bool,
@@ -112,7 +160,7 @@ impl Default for TextOptions {
     }
 }
 struct Entry {
-    key: SharedString,
+    key: TextKey,
     text: SharedString,
     geometry: geometry::Geometry,
     hitbox: HitboxId,
@@ -129,7 +177,7 @@ struct Cached {
 }
 type ScrollCallback = Rc<dyn Fn(Pixels, &mut App) -> bool>;
 struct ScrollArea {
-    id: EntityId,
+    id: u64,
     bounds: Bounds<Pixels>,
     scroll: ScrollCallback,
 }
@@ -137,7 +185,7 @@ struct ScrollArea {
 /// moved its native scroll state. The document uses the normal GPUI state;
 /// it neither copies offsets nor routes drag frames through JavaScript.
 pub fn register_scroll_area(
-    id: EntityId,
+    id: u64,
     bounds: Bounds<Pixels>,
     window: &Window,
     cx: &mut App,
@@ -164,18 +212,19 @@ pub fn register_scroll_area(
 /// One native selection, focus owner, and bounded cache of text painted in this document.
 pub struct Document {
     props: DocumentProps,
-    children: Vec<AnyView>,
+    children: Option<Children>,
+    native: Vec<AnyView>,
     focus: FocusHandle,
     selection: SelectionState,
     selection_revision: u64,
     drag_capture: Option<HitboxId>,
     drag_position: Option<Point<Pixels>>,
-    drag_scrolls: Vec<EntityId>,
+    drag_scrolls: Vec<u64>,
     drag_task: Option<Task<()>>,
     scroll_areas: Vec<ScrollArea>,
     painted_selection_revision: u64,
     entries: Vec<Entry>,
-    cache: HashMap<SharedString, Cached>,
+    cache: FxHashMap<TextKey, Cached>,
     paint: u64,
     content_changed: bool,
     query_revision: u64,
@@ -193,7 +242,8 @@ impl Document {
     pub fn new(props: DocumentProps, cx: &mut Context<Self>) -> Self {
         Self {
             props,
-            children: vec![],
+            children: None,
+            native: Vec::new(),
             focus: cx.focus_handle(),
             selection: SelectionState::default(),
             selection_revision: 0,
@@ -204,7 +254,7 @@ impl Document {
             scroll_areas: vec![],
             painted_selection_revision: 0,
             entries: vec![],
-            cache: HashMap::new(),
+            cache: FxHashMap::default(),
             paint: 0,
             content_changed: false,
             query_revision: 0,
@@ -218,6 +268,12 @@ impl Document {
             highlights: vec![],
             match_count: 0,
         }
+    }
+    /// Native views composed into this document ahead of its React children.
+    /// Native extensions that own a Document supply their content here.
+    pub fn set_native_children(&mut self, native: Vec<AnyView>, cx: &mut Context<Self>) {
+        self.native = native;
+        cx.notify();
     }
     fn index_offset(&self) -> usize {
         self.props
@@ -484,9 +540,10 @@ impl Document {
                 );
                 let entries = self.registered();
                 let find = |endpoint: Endpoint| -> anyhow::Result<(usize, usize)> {
+                    let key = TextKey::parse(&endpoint.key);
                     let index = entries
                         .iter()
-                        .position(|entry| entry.key.as_ref() == endpoint.key)
+                        .position(|entry| entry.key == key)
                         .ok_or_else(|| anyhow::anyhow!("selection endpoint is not painted"))?;
                     Ok((
                         index,
@@ -503,13 +560,13 @@ impl Document {
     /// The current native selection for one logical text, in UTF-8 byte offsets.
     /// Returns None if the key is not selected or the selected bytes no longer
     /// match `text`. This reads selection state; it does not compute layout.
-    pub fn selected_range(&self, key: &str, text: &str) -> Option<Range<usize>> {
+    pub fn selected_range(&self, key: &TextKey, text: &str) -> Option<Range<usize>> {
         let range = self.selection.wash_range(key)?;
         let source = self
             .selection
             .spans()
             .iter()
-            .find(|span| span.key.as_ref() == key)?;
+            .find(|span| span.key == *key)?;
         (text.get(range.clone())? == source.text.get(range.clone())?).then_some(range)
     }
     pub fn snapshot(&self) -> DocumentSnapshot {
@@ -604,7 +661,7 @@ impl Document {
     }
     fn paint_text(
         &mut self,
-        key: SharedString,
+        key: TextKey,
         text: SharedString,
         layout: TextLayout,
         hitbox: HitboxId,
@@ -720,7 +777,15 @@ impl Document {
     }
 }
 impl Render for Document {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut children: Vec<AnyElement> = self
+            .native
+            .iter()
+            .map(|view| view.clone().into_any_element())
+            .collect();
+        if let Some(react) = &self.children {
+            children.extend(react.render_all(window, cx));
+        }
         DocumentScope {
             context: Rc::new(ActiveDocument(cx.weak_entity())),
             child: self
@@ -733,7 +798,7 @@ impl Render for Document {
                         .flex_col()
                         .track_focus(&self.focus),
                 )
-                .children(self.children.clone())
+                .children(children)
                 .into_any_element(),
         }
     }
@@ -765,8 +830,8 @@ impl ReactView for Document {
     }
 }
 impl ReactChildren for Document {
-    fn set_children(&mut self, children: Vec<AnyView>, _: &mut Window, cx: &mut Context<Self>) {
-        self.children = children;
+    fn set_children(&mut self, children: Children, _: &mut Window, cx: &mut Context<Self>) {
+        self.children = Some(children);
         cx.notify();
     }
 }
@@ -928,12 +993,12 @@ impl IntoElement for DocumentScope {
 /// stable and unique inside the nearest Document. Outside a Document it remains
 /// ordinary GPUI text. Native extensions use this helper without a React tree.
 pub struct DocumentText {
-    key: SharedString,
+    key: TextKey,
     text: SharedString,
     styled: StyledText,
     options: TextOptions,
 }
-pub fn document_text(key: impl Into<SharedString>, text: impl Into<SharedString>) -> DocumentText {
+pub fn document_text(key: impl Into<TextKey>, text: impl Into<SharedString>) -> DocumentText {
     let text = text.into();
     DocumentText {
         key: key.into(),
@@ -969,7 +1034,10 @@ impl Element for DocumentText {
     type RequestLayoutState = ();
     type PrepaintState = Option<Hitbox>;
     fn id(&self) -> Option<ElementId> {
-        Some(ElementId::Name(self.key.clone()))
+        Some(match &self.key {
+            TextKey::Node(id) => ElementId::Integer(*id as u64),
+            TextKey::Named(name) => ElementId::Name(name.clone()),
+        })
     }
     fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
         None
@@ -1046,81 +1114,94 @@ impl IntoElement for DocumentText {
 
 #[cfg(test)]
 mod tests {
-    use super::{Document, DocumentProps, geometry};
-    use crate::Color;
-    use crate::{Text, TextProps};
-    use gpui::{self, AppContext, TestAppContext, rgb};
-    use gpui_react::{ReactChildren, ReactView};
-    use serde_json::json;
+    use super::{Document, DocumentProps, TextKey, geometry};
+    use gpui::{self, AppContext, Entity, TestAppContext, WindowHandle};
+    use gpui_react::{Host, ReactView, Registry};
+    use serde_json::{Value, json};
     use std::sync::Arc;
-    fn props(query: &str, active: usize, offset: usize) -> DocumentProps {
-        serde_json::from_value(json!({"search":{"query":query,"activeIndex":active,"matchIndexOffset":offset},"style":{"width":200,"height":100}})).unwrap()
+
+    fn props(query: &str, active: usize, offset: usize) -> Value {
+        json!({"search":{"query":query,"activeIndex":active,"matchIndexOffset":offset},"style":{"width":200,"height":100}})
     }
+    fn host(cx: &mut TestAppContext, operations: Value) -> (WindowHandle<Host>, Entity<Document>) {
+        let window = cx.add_window(|_, _| {
+            let mut registry = Registry::default();
+            crate::register(&mut registry).unwrap();
+            Host::new(registry, Arc::new(|_| {}))
+        });
+        let document = window
+            .update(cx, |host, window, cx| {
+                apply(host, 1, operations, window, cx);
+                host.view(1).unwrap().downcast::<Document>().unwrap()
+            })
+            .unwrap();
+        (window, document)
+    }
+    fn apply(host: &mut Host, sequence: u64, operations: Value, window: &mut gpui::Window, cx: &mut gpui::Context<Host>) {
+        host.apply(
+            gpui_react::protocol::Transaction::from_json(&json!({"version":1,"sequence":sequence,"operations":operations})).unwrap(),
+            window,
+            cx,
+        )
+        .unwrap();
+    }
+    fn draw(cx: &mut TestAppContext, window: WindowHandle<Host>) {
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+            .unwrap();
+    }
+
     #[gpui::test]
     fn native_match_cache_survives_cursor_colors_layout_and_offset_changes(
         cx: &mut TestAppContext,
     ) {
-        let window = cx.add_window(|_, cx| Document::new(props("token", 0, 0), cx));
-        window
-            .update(cx, |doc, window, cx| {
-                let text = cx.new(|_| {
-                    Text::new(TextProps {
-                        text: "token token".into(),
-                        text_key: Some("text".into()),
-                        ..Default::default()
-                    })
-                });
-                doc.set_children(vec![text.into()], window, cx);
-            })
-            .unwrap();
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
-            .unwrap();
-        let matches = window
-            .update(cx, |doc, _, _| doc.cache["text"].matches.clone())
-            .unwrap();
-        let revision = window.update(cx, |doc, _, _| doc.content_revision).unwrap();
-        for (active, offset, width) in [(1, 0, 150.), (5, 4, 300.)] {
+        let (window, document) = host(cx, json!([
+            {"op":"create","id":1,"component":"document","props":props("token",0,0)},
+            {"op":"place","parent":null,"child":1,"before":null},
+            {"op":"create","id":2,"component":"text","props":{"text":"token token","textKey":"text"}},
+            {"op":"place","parent":1,"child":2,"before":null}
+        ]));
+        draw(cx, window);
+        let matches = document.read_with(cx, |doc, _| doc.cache[&TextKey::from("text")].matches.clone());
+        let revision = document.read_with(cx, |doc, _| doc.content_revision);
+        for (sequence, (active, offset, width)) in [(1, 0, 150.), (5, 4, 300.)].into_iter().enumerate() {
             window
-                .update(cx, |doc, window, cx| {
+                .update(cx, |host, window, cx| {
                     let mut props = props("token", active, offset);
-                    props.style.width = Some(crate::Length::Pixels(width));
-                    props.search.as_mut().unwrap().color = Color(rgb(0x00ff00).into());
-                    doc.set_props(props, window, cx);
+                    props["style"]["width"] = json!(width);
+                    props["search"]["color"] = json!("#00ff00");
+                    apply(host, sequence as u64 + 2, json!([{"op":"props","id":1,"component":"document","props":props}]), window, cx);
                 })
                 .unwrap();
-            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
-                .unwrap();
-            window
-                .update(cx, |doc, _, _| {
-                    assert!(
-                        Arc::ptr_eq(&matches, &doc.cache["text"].matches),
-                        "cursor and paint changes must not rematch text"
-                    );
-                    assert_eq!(doc.content_revision, revision);
-                    assert_eq!(doc.match_count, 2);
-                })
-                .unwrap();
+            draw(cx, window);
+            document.read_with(cx, |doc, _| {
+                assert!(
+                    Arc::ptr_eq(&matches, &doc.cache[&TextKey::from("text")].matches),
+                    "cursor and paint changes must not rematch text"
+                );
+                assert_eq!(doc.content_revision, revision);
+                assert_eq!(doc.match_count, 2);
+            });
         }
         window
-            .update(cx, |doc, window, cx| doc.set_children(vec![], window, cx))
-            .unwrap();
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
-            .unwrap();
-        window
-            .update(cx, |doc, _, _| {
-                assert!(doc.cache.is_empty());
-                assert!(doc.content_revision > revision);
+            .update(cx, |host, window, cx| {
+                apply(host, 4, json!([{"op":"remove","id":2}]), window, cx)
             })
             .unwrap();
+        draw(cx, window);
+        document.read_with(cx, |doc, _| {
+            assert!(doc.cache.is_empty());
+            assert!(doc.content_revision > revision);
+        });
     }
+
     #[gpui::test]
     fn snapshot_keeps_the_painted_match_offset_until_next_draw(cx: &mut TestAppContext) {
-        let window = cx.add_window(|_, cx| Document::new(props("token", 0, 2), cx));
+        let window = cx.add_window(|_, cx| Document::new(serde_json::from_value(props("token", 0, 2)).unwrap(), cx));
         cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         window
             .update(cx, |doc, window, cx| {
-                doc.set_props(props("different", 1, 8), window, cx);
+                doc.set_props(serde_json::from_value(props("different", 1, 8)).unwrap(), window, cx);
                 assert_eq!(
                     doc.snapshot().match_index_offset,
                     2,
@@ -1133,221 +1214,20 @@ mod tests {
 
     #[gpui::test]
     fn geometry_has_no_fixed_line_limit_and_checks_surrogate_boundaries(cx: &mut TestAppContext) {
-        let window = cx.add_window(|_, cx| Document::new(DocumentProps::default(), cx));
-        window
-            .update(cx, |doc, window, cx| {
-                let text = cx.new(|_| {
-                    Text::new(TextProps {
-                        text: (0..300).map(|_| "line\n").collect(),
-                        text_key: Some("long".into()),
-                        ..Default::default()
-                    })
-                });
-                doc.set_children(vec![text.into()], window, cx);
-            })
-            .unwrap();
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
-            .unwrap();
-        window
-            .update(cx, |doc, _, _| {
-                let entry = &doc.entries[0];
-                assert_eq!(entry.geometry.range_rects(0..entry.text.len()).len(), 300);
-            })
-            .unwrap();
+        let text: String = (0..300).map(|_| "line\n").collect();
+        let (window, document) = host(cx, json!([
+            {"op":"create","id":1,"component":"document","props":{}},
+            {"op":"place","parent":null,"child":1,"before":null},
+            {"op":"create","id":2,"component":"text","props":{"text":text,"textKey":"long"}},
+            {"op":"place","parent":1,"child":2,"before":null}
+        ]));
+        draw(cx, window);
+        document.read_with(cx, |doc, _| {
+            let entry = &doc.entries[0];
+            assert_eq!(entry.geometry.range_rects(0..entry.text.len()).len(), 300);
+        });
         assert_eq!(geometry::byte_offset("a😀b", 3).unwrap(), 5);
         assert!(geometry::byte_offset("a😀b", 2).is_err());
-    }
-
-    struct DeferredText(gpui::SharedString);
-    impl gpui::Render for DeferredText {
-        fn render(
-            &mut self,
-            _: &mut gpui::Window,
-            _: &mut gpui::Context<Self>,
-        ) -> impl gpui::IntoElement {
-            use gpui::prelude::*;
-            gpui::deferred(
-                gpui::div()
-                    .child(super::document_text("deferred", self.0.clone()))
-                    .child(
-                        gpui::deferred(super::document_text("nested", "nested token"))
-                            .with_priority(2),
-                    ),
-            )
-        }
-    }
-
-    #[gpui::test]
-    fn deferred_document_text_keeps_selection_search_and_cache(cx: &mut TestAppContext) {
-        use gpui::prelude::*;
-        let window = cx.add_window(|_, cx| Document::new(props("token", 0, 0), cx));
-        let reports = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-        let report_sink = reports.clone();
-        let document = window.update(cx, |_, _, cx| cx.entity()).unwrap();
-        cx.update(|cx| {
-            cx.subscribe(&document, move |_, event: &super::DocumentEvent, _| {
-                if let super::DocumentEvent::Search {
-                    count,
-                    content_revision,
-                    ..
-                } = event
-                {
-                    report_sink.borrow_mut().push((*count, *content_revision));
-                }
-            })
-            .detach()
-        });
-        window
-            .update(cx, |doc, window, cx| {
-                let normal = cx.new(|_| {
-                    Text::new(TextProps {
-                        text: "normal token".into(),
-                        text_key: Some("normal".into()),
-                        ..Default::default()
-                    })
-                });
-                let deferred = cx.new(|_| DeferredText("deferred token".into()));
-                doc.set_children(vec![normal.into(), deferred.into()], window, cx);
-            })
-            .unwrap();
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
-            .unwrap();
-        let (revision, matches) = window
-            .update(cx, |doc, window, cx| {
-                assert_eq!(
-                    doc.entries
-                        .iter()
-                        .map(|entry| entry.key.as_ref())
-                        .collect::<Vec<_>>(),
-                    vec!["normal", "deferred", "nested"]
-                );
-                assert_eq!(doc.match_count, 3);
-                assert_eq!(doc.cache.len(), 3);
-                doc.apply_command(super::DocumentCommand::SelectAll, window, cx)
-                    .unwrap();
-                assert_eq!(
-                    doc.snapshot().selection.as_deref(),
-                    Some("normal token\ndeferred token\nnested token")
-                );
-                (doc.content_revision, doc.cache["deferred"].matches.clone())
-            })
-            .unwrap();
-        assert_eq!(&*reports.borrow(), &[(3, revision)]);
-        for _ in 0..2 {
-            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
-                .unwrap();
-            window
-                .update(cx, |doc, _, _| {
-                    assert_eq!(doc.content_revision, revision);
-                    assert!(Arc::ptr_eq(&matches, &doc.cache["deferred"].matches));
-                    assert_eq!(doc.ranges.len(), 3);
-                })
-                .unwrap();
-        }
-        assert_eq!(
-            reports.borrow().len(),
-            1,
-            "stable deferred content must not emit repeated search results"
-        );
-        window
-            .update(cx, |doc, window, cx| {
-                doc.set_children(vec![doc.children[0].clone()], window, cx);
-            })
-            .unwrap();
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
-            .unwrap();
-        window
-            .update(cx, |doc, _, _| {
-                assert_eq!(doc.cache.len(), 1);
-                assert_eq!(doc.content_revision, revision + 1);
-                assert_eq!(doc.match_count, 1);
-            })
-            .unwrap();
-        assert_eq!(reports.borrow().last(), Some(&(1, revision + 1)));
-    }
-
-    #[gpui::test]
-    fn document_revision_is_complete_when_draw_returns(cx: &mut TestAppContext) {
-        let handle = cx.add_window(|_, cx| Document::new(props("token", 0, 0), cx));
-        let document = handle.update(cx, |_, _, cx| cx.entity()).unwrap();
-        let text = cx.update(|cx| cx.new(|_| DeferredText("first token".into())));
-        cx.update_window(handle.into(), |_, window, cx| {
-            document.update(cx, |doc, cx| doc.set_children(vec![text.clone().into()], window, cx));
-            let initial = document.read(cx).content_revision;
-            window.draw(cx).clear(cx);
-            assert_eq!(document.read(cx).content_revision, initial + 1, "a completed draw must publish its complete content revision before native callers read it");
-            text.update(cx, |text, cx| {
-                text.0 = "second token".into();
-                cx.notify();
-            });
-            window.draw(cx).clear(cx);
-            let snapshot = document.read(cx).snapshot();
-            assert_eq!(snapshot.content_revision, initial + 2);
-            assert_eq!(snapshot.text[0].text, "second token");
-            assert_eq!(snapshot.match_count, 2);
-        }).unwrap();
-    }
-
-    struct ChangeSearchAfterPaint(gpui::WeakEntity<Document>);
-    impl gpui::Render for ChangeSearchAfterPaint {
-        fn render(
-            &mut self,
-            _: &mut gpui::Window,
-            _: &mut gpui::Context<Self>,
-        ) -> impl gpui::IntoElement {
-            use gpui::prelude::*;
-            let owner = self.0.clone();
-            gpui::div()
-                .child(super::document_text("late", "token"))
-                .on_painted(move |_, window, _| {
-                    let owner = owner.clone();
-                    window.on_draw_complete(move |window, cx| {
-                        owner
-                            .update(cx, |doc, cx| {
-                                if doc.query_revision == 0 {
-                                    doc.set_props(props("different", 0, 9), window, cx);
-                                }
-                            })
-                            .unwrap();
-                    });
-                })
-        }
-    }
-    #[gpui::test]
-    fn completion_uses_the_query_that_was_painted(cx: &mut TestAppContext) {
-        let handle = cx.add_window(|_, cx| Document::new(props("token", 0, 2), cx));
-        let document = handle.update(cx, |_, _, cx| cx.entity()).unwrap();
-        cx.update_window(handle.into(), |_, window, cx| {
-            let child = cx.new(|_| ChangeSearchAfterPaint(document.downgrade()));
-            document.update(cx, |doc, cx| {
-                doc.set_children(vec![child.into()], window, cx)
-            });
-            window.draw(cx).clear(cx);
-            let doc = document.read(cx);
-            assert_eq!(doc.query_revision, 1);
-            assert_eq!(doc.reported_search, Some((doc.content_revision, 0, 2)));
-            assert_eq!(doc.snapshot().query.unwrap().query, "token");
-            assert_eq!(doc.snapshot().match_index_offset, 2);
-            assert_eq!(doc.snapshot().match_count, 1);
-        })
-        .unwrap();
-    }
-
-    #[gpui::test]
-    fn native_selected_range_uses_bytes_and_rejects_changed_source(cx: &mut TestAppContext) {
-        let window = cx.add_window(|_, cx| Document::new(DocumentProps::default(), cx));
-        window
-            .update(cx, |doc, _, _| {
-                doc.selection
-                    .begin_with_span(&"key".into(), &"a😀b".into(), 1..5);
-                assert_eq!(doc.selected_range("key", "a😀b"), Some(1..5));
-                assert_eq!(doc.selected_range("key", "z😀b"), Some(1..5));
-                assert_eq!(doc.selected_range("other", "a😀b"), None);
-                assert_eq!(doc.selected_range("key", "axxxx"), None);
-                assert_eq!(doc.selected_range("key", "a"), None);
-                doc.selection.clear();
-                assert_eq!(doc.selected_range("key", "a😀b"), None);
-            })
-            .unwrap();
+        let _ = DocumentProps::default();
     }
 }

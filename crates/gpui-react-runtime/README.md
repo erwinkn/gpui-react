@@ -3,7 +3,7 @@
 This crate combines `gpui-react-host` and `gpui-react-controls` in one native
 library. It registers `container`, `text`, `input`, `list`, and `document`.
 It contains no consumer components or test driver. The JavaScript package is
-[`@gpuix/bridge-runtime`](../../packages/bridge-runtime/README.md).
+[`@gpui-react/runtime`](../../packages/bridge-runtime/README.md).
 
 ```sh
 cargo build --release --locked --manifest-path crates/gpui-react-runtime/Cargo.toml

@@ -42,7 +42,7 @@ impl ReactView for Nested {
         let host = cx.new(|_| Host::new(registry, Arc::new(|_| {})));
         host.update(cx, |host, cx| {
             host.apply(
-                serde_json::from_value(json!({"version":1,"sequence":1,"operations":[
+                gpui_react::protocol::Transaction::from_json(&json!({"version":1,"sequence":1,"operations":[
                     {"op":"create","id":1,"component":"probe","props":null},
                     {"op":"place","parent":null,"child":1,"before":null}
                 ]}))
@@ -52,7 +52,7 @@ impl ReactView for Nested {
             )
             .unwrap();
             host.apply(
-                serde_json::from_value(json!({"version":1,"sequence":2,"operations":[]})).unwrap(),
+                gpui_react::protocol::Transaction::from_json(&json!({"version":1,"sequence":2,"operations":[]})).unwrap(),
                 window,
                 cx,
             )
@@ -75,7 +75,7 @@ fn nested_hosts_restore_the_paint_scope_without_a_layout_box(cx: &mut TestAppCon
         .unwrap();
     let window = cx.add_window(|_, _| Host::new(registry, Arc::new(|_| {})));
     window.update(cx,|host,window,cx| {
-        host.apply(serde_json::from_value(json!({"version":1,"sequence":1,"operations":[
+        host.apply(gpui_react::protocol::Transaction::from_json(&json!({"version":1,"sequence":1,"operations":[
             {"op":"create","id":1,"component":"probe","props":null},{"op":"place","parent":null,"child":1,"before":null},
             {"op":"create","id":2,"component":"nested","props":null},{"op":"place","parent":null,"child":2,"before":null},
             {"op":"create","id":3,"component":"probe","props":null},{"op":"place","parent":null,"child":3,"before":null}
@@ -138,7 +138,7 @@ fn deferred_native_views_keep_their_host_frame_context(cx: &mut TestAppContext) 
     handle
         .update(cx, |host, window, cx| {
             host.apply(
-                serde_json::from_value(json!({"version":1,"sequence":1,"operations":[
+                gpui_react::protocol::Transaction::from_json(&json!({"version":1,"sequence":1,"operations":[
                     {"op":"create","id":1,"component":"floating","props":null},
                     {"op":"place","parent":null,"child":1,"before":null}
                 ]}))
@@ -196,7 +196,7 @@ fn deferred_nested_hosts_keep_distinct_scopes_across_draws(cx: &mut TestAppConte
     handle
         .update(cx, |host, window, cx| {
             host.apply(
-                serde_json::from_value(json!({"version":1,"sequence":1,"operations":[
+                gpui_react::protocol::Transaction::from_json(&json!({"version":1,"sequence":1,"operations":[
                     {"op":"create","id":1,"component":"nested","props":null},
                     {"op":"place","parent":null,"child":1,"before":null},
                     {"op":"create","id":2,"component":"floating","props":null},
@@ -214,7 +214,7 @@ fn deferred_nested_hosts_keep_distinct_scopes_across_draws(cx: &mut TestAppConte
         handle
             .update(cx, |host, window, cx| {
                 host.apply(
-                    serde_json::from_value(
+                    gpui_react::protocol::Transaction::from_json(&
                         json!({"version":1,"sequence":sequence,"operations":[]}),
                     )
                     .unwrap(),

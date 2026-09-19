@@ -5,7 +5,7 @@
   "macOS": "26.6.2",
   "rust": "1.97.1",
   "scope": "Native mutation only; excludes JSON, worker transport, layout, paint, and presentation.",
-  "baselineGpuix": "6f867ea",
+  "baselinePrevious": "6f867ea",
   "baselineGpui": "bea32f070b",
   "afterGpui": "25402064a7",
   "samplesPerCase": 200,

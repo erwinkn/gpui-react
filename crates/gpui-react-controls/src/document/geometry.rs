@@ -1,68 +1,78 @@
 //! Geometry uses GPUI's shaped glyphs and wrap boundaries; no second layout.
-use gpui::{Bounds, LineLayout, Pixels, Point, TextAlign, TextLayout, point, px, size};
+//! An entry keeps only the shared line layouts and derives rows when a
+//! selection, search wash, or hit test asks for them.
+use gpui::{Bounds, LineLayout, Pixels, Point, TextAlign, TextLayout, WrappedLineLayout, point, px, size};
+use smallvec::SmallVec;
 use std::{ops::Range, sync::Arc};
 
-struct Row {
+struct Row<'a> {
     source: Range<usize>,
     line_start: usize,
     x_start: Pixels,
     origin: Point<Pixels>,
     height: Pixels,
-    layout: Arc<LineLayout>,
-}
-fn rows(layout: &TextLayout, align: TextAlign) -> Vec<Row> {
-    let mut rows = Vec::new();
-    let bounds = layout.bounds();
-    let height = layout.line_height();
-    let mut line_start = 0;
-    let mut y = bounds.top();
-    for line in layout.line_layouts() {
-        let mut start = 0;
-        for end in line
-            .wrap_boundaries
-            .iter()
-            .map(|boundary| line.runs()[boundary.run_ix].glyphs[boundary.glyph_ix].index)
-            .chain([line.len()])
-        {
-            let x_start = line.unwrapped_layout.x_for_index(start);
-            let width = line.unwrapped_layout.x_for_index(end) - x_start;
-            let x = bounds.left()
-                + match align {
-                    TextAlign::Left => px(0.),
-                    TextAlign::Center => (bounds.size.width - width) / 2.,
-                    TextAlign::Right => bounds.size.width - width,
-                };
-            rows.push(Row {
-                source: line_start + start..line_start + end,
-                line_start,
-                x_start,
-                origin: point(x, y),
-                height,
-                layout: line.unwrapped_layout.clone(),
-            });
-            start = end;
-            y += height;
-        }
-        line_start += line.len() + 1; // hard newline between shaped lines
-    }
-    rows
+    layout: &'a Arc<LineLayout>,
 }
 pub struct Geometry {
     pub bounds: Bounds<Pixels>,
+    line_height: Pixels,
+    align: TextAlign,
     length: usize,
-    rows: Vec<Row>,
+    lines: SmallVec<[Arc<WrappedLineLayout>; 1]>,
 }
 impl Geometry {
     pub fn new(layout: &TextLayout, align: TextAlign) -> Self {
         Self {
             bounds: layout.bounds(),
+            line_height: layout.line_height(),
+            align,
             length: layout.len(),
-            rows: rows(layout, align),
+            lines: layout.line_layouts(),
         }
     }
+    fn rows(&self) -> impl Iterator<Item = Row<'_>> {
+        let bounds = self.bounds;
+        let height = self.line_height;
+        let align = self.align;
+        let mut line_start = 0;
+        let mut y = bounds.top();
+        self.lines.iter().flat_map(move |line| {
+            let this_line_start = line_start;
+            line_start += line.len() + 1; // hard newline between shaped lines
+            let mut start = 0;
+            let mut y_row = y;
+            let ends: SmallVec<[usize; 2]> = line
+                .wrap_boundaries
+                .iter()
+                .map(|boundary| line.unwrapped_layout.runs[boundary.run_ix].glyphs[boundary.glyph_ix].index)
+                .chain([line.len()])
+                .collect();
+            y += height * ends.len() as f32;
+            ends.into_iter().map(move |end| {
+                let x_start = line.unwrapped_layout.x_for_index(start);
+                let width = line.unwrapped_layout.x_for_index(end) - x_start;
+                let x = bounds.left()
+                    + match align {
+                        TextAlign::Left => px(0.),
+                        TextAlign::Center => (bounds.size.width - width) / 2.,
+                        TextAlign::Right => bounds.size.width - width,
+                    };
+                let row = Row {
+                    source: this_line_start + start..this_line_start + end,
+                    line_start: this_line_start,
+                    x_start,
+                    origin: point(x, y_row),
+                    height,
+                    layout: &line.unwrapped_layout,
+                };
+                start = end;
+                y_row += height;
+                row
+            })
+        })
+    }
     pub fn range_rects(&self, range: Range<usize>) -> Vec<Bounds<Pixels>> {
-        self.rows
-            .iter()
+        self.rows()
             .filter_map(|row| {
                 let start = range.start.max(row.source.start);
                 let end = range.end.min(row.source.end);
@@ -89,17 +99,25 @@ impl Geometry {
         self.position_index(position, true)
     }
     fn position_index(&self, position: Point<Pixels>, character: bool) -> usize {
-        let Some(row) = self
-            .rows
-            .iter()
-            .find(|row| position.y < row.origin.y + row.height)
-            .or(self.rows.last())
-        else {
+        let mut rows = self.rows().peekable();
+        let Some(first) = rows.peek() else {
             return 0;
         };
-        if position.y < self.rows[0].origin.y {
+        if position.y < first.origin.y {
             return 0;
         }
+        let mut last = None;
+        let mut chosen = None;
+        for row in rows {
+            if position.y < row.origin.y + row.height {
+                chosen = Some(row);
+                break;
+            }
+            last = Some(row);
+        }
+        let Some(row) = chosen.or(last) else {
+            return 0;
+        };
         if position.y > row.origin.y + row.height {
             return self.length;
         }

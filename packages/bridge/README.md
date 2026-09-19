@@ -1,13 +1,13 @@
 # Asynchronous React to GPUI bridge
 
-This is the new React integration, developed alongside the existing GPUiX
-packages. It includes an explicit macOS/Bun native host connection and can wrap
-ordinary GPUI views from a compiled composition. Standard controls and the
-default `@gpuix/bridge-runtime` package are available in this repository.
-Release publication and broader performance checks remain in progress.
+This is the React reconciler for GPUI. It includes an explicit macOS/Bun
+native host connection and can wrap ordinary GPUI views from a compiled
+composition. Standard controls and the default `@gpui-react/runtime` package
+are available in this repository. Release publication and broader performance
+checks remain in progress.
 
 ```tsx
-import { createRoot, nativeComponent } from '@gpuix/bridge'
+import { createRoot, nativeComponent } from '@gpui-react/core'
 
 const Counter = nativeComponent<
   { step: number },
@@ -47,8 +47,16 @@ After mounting, native code owns child topology. Native removal reports retired
 subscriptions, so the worker needs no native tree to discover removed callbacks.
 Host IDs are allocated at commit, in native creation order. Abandoned render
 descriptions allocate no native IDs or component instances.
-Callback changes do not resend unchanged native props. Props follow React's
+Callback changes do not resend unchanged native props, and structurally equal
+props are not resent even when React created a new object for them, so an
+inline style literal costs nothing after its first commit. Props follow React's
 immutable-update convention; changing an object in place is unsupported.
+Every prop, command, and query operation names its component so the native
+worker can decode it to typed data before it reaches the UI thread. A `style`
+object is sent once as a `style` definition and referenced by id afterwards;
+the root keeps up to 4,096 definitions and drops the least recently used. Host
+ids are reused once the transaction that removed a node is acknowledged; a ref
+whose node has unmounted rejects further commands and queries.
 
 Mutations and synchronous layout-effect commands are sealed together in a
 microtask. Native events use subscription IDs, so callback versions remain
@@ -85,14 +93,14 @@ platform, and installed-package checks are documented in the repository README.
 
 Select one compiled composition explicitly in both entry files:
 
-For the standard controls, use `import bindings from '@gpuix/bridge-runtime'`
+For the standard controls, use `import bindings from '@gpui-react/runtime'`
 in both files. Install matching versions of the three bridge packages. A custom
 composition uses the literal native path shown below instead. The default
 runtime has no browser driver. It supports macOS arm64 with Bun.
 
 ```ts
 // host.ts
-import { runApplication } from '@gpuix/bridge/application'
+import { runApplication } from '@gpui-react/core/application'
 const bindings = require('./app-runtime.node')
 await runApplication(bindings, new URL('./worker.tsx', import.meta.url), {
   title: 'My app', width: 800, height: 600,
@@ -101,7 +109,7 @@ await runApplication(bindings, new URL('./worker.tsx', import.meta.url), {
 
 ```tsx
 // worker.tsx
-import { attachApplication } from '@gpuix/bridge/application'
+import { attachApplication } from '@gpui-react/core/application'
 const bindings = require('./app-runtime.node')
 const root = attachApplication(bindings)
 root.render(<App />)

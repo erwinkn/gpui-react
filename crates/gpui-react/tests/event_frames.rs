@@ -64,7 +64,7 @@ fn apply(
     cx: &mut Context<Host>,
 ) -> protocol::Reply {
     host.apply(
-        serde_json::from_value(json!({"version":1,"sequence":sequence,"operations":operations}))
+        gpui_react::protocol::Transaction::from_json(&json!({"version":1,"sequence":sequence,"operations":operations}))
             .unwrap(),
         window,
         cx,
@@ -139,7 +139,7 @@ fn native_commit_routes_events_without_claiming_that_old_hitboxes_are_new_layout
                 host,
                 2,
                 json!([
-                    {"op":"props","id":1,"props":{"revision":2,"width":20}},
+                    {"op":"props","id":1,"component":"button","props":{"revision":2,"width":20}},
                     {"op":"listen","id":1,"subscription":2}
                 ]),
                 window,

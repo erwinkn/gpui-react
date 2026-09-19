@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import { createRef, useLayoutEffect } from "react"
-import { attachApplication } from "@gpuix/bridge/application"
-import { nativeComponent, type NativeRef } from "@gpuix/bridge"
-import { Input, List, Text, type InputEvent, type InputRef, type ListEvent } from "@gpuix/bridge-controls"
+import { attachApplication } from "@gpui-react/core/application"
+import { nativeComponent, type NativeRef } from "@gpui-react/core"
+import { Input, List, Text, type InputEvent, type InputRef, type ListEvent } from "@gpui-react/controls"
 
-import { Texture } from "@gpuix/bridge-gpu-example"
+import { Texture } from "@gpui-react/gpu-example"
 
 const bindings = require("./counter.node")
 const root = attachApplication(bindings)

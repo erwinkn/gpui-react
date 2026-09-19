@@ -1,4 +1,4 @@
-import { runApplication } from "@gpuix/bridge/application"
+import { runApplication } from "@gpui-react/core/application"
 const bindings = require("./counter.node")
 const mode = process.env.BRIDGE_COUNTER_MODE ?? ""
 const entries: Record<string, string> = {

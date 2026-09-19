@@ -1,9 +1,8 @@
 # External GPU component
 
 This fixture is an ordinary GPUI `TextureView` with a small React binding. It
-depends on `gpui-react` and the standard controls. It does not import the old
-`gpuix-native` renderer. The application composition registers it in the same
-runtime as its other components.
+depends on `gpui-react` and the standard controls. The application composition
+registers it in the same runtime as its other components.
 
 The producer obtains the window's Metal device and command queue. It creates
 an RGBA16Float texture, clears it through a GPU render command, and submits that
@@ -34,7 +33,7 @@ The optional bridge capabilities delegate to those methods. `register` adds
 
 ```tsx
 import { createRef } from "react"
-import { Texture, type TextureRef } from "@gpuix/bridge-gpu-example"
+import { Texture, type TextureRef } from "@gpui-react/gpu-example"
 
 const texture = createRef<TextureRef>()
 root.render(<Texture ref={texture} initialColor={[2, 0, 0, 0.25]}
@@ -82,9 +81,9 @@ this small fixture does not claim that allocation policy is optimal for video.
 Run the Metal pixel and resource checks from the repository root:
 
 ```sh
-CARGO_TARGET_DIR=/tmp/gpuix-framework-target CARGO_BUILD_JOBS=3 cargo run --manifest-path fixtures/bridge-gpu-component/Cargo.toml --release --example visual
-CARGO_TARGET_DIR=/tmp/gpuix-framework-target CARGO_BUILD_JOBS=3 cargo test --manifest-path fixtures/bridge-gpu-component/Cargo.toml --release
-CARGO_TARGET_DIR=/tmp/gpuix-framework-target CARGO_BUILD_JOBS=3 cargo clippy --manifest-path fixtures/bridge-gpu-component/Cargo.toml --release --all-targets -- -D warnings
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo run --manifest-path fixtures/bridge-gpu-component/Cargo.toml --release --example visual
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo test --manifest-path fixtures/bridge-gpu-component/Cargo.toml --release
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo clippy --manifest-path fixtures/bridge-gpu-component/Cargo.toml --release --all-targets -- -D warnings
 ```
 
 The example keeps its window offscreen. It checks exact pixels for HDR blending,

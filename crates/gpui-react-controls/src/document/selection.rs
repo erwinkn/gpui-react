@@ -9,6 +9,7 @@
 //! selected content after virtualization removes the corresponding views.
 //! State belongs to one Document. No window or React tree is needed here.
 
+use super::TextKey;
 use gpui::SharedString;
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
@@ -17,7 +18,7 @@ use unicode_segmentation::UnicodeSegmentation;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Span {
     /// Stable logical key inside the document.
-    pub key: SharedString,
+    pub key: TextKey,
     pub range: Range<usize>,
     /// Shared immutable source, retained until the selection is cleared.
     pub text: SharedString,
@@ -25,7 +26,7 @@ pub struct Span {
 
 #[derive(Clone, Debug)]
 pub struct RegisteredText {
-    pub key: SharedString,
+    pub key: TextKey,
     pub text: SharedString,
 }
 
@@ -33,7 +34,7 @@ pub struct RegisteredText {
 #[derive(Clone, Debug, Default)]
 pub struct SelectionState {
     /// Element that owns the drag (where the mouse went down).
-    anchor_key: String,
+    anchor_key: Option<TextKey>,
     /// Byte offset of the anchor within its element.
     anchor_ix: usize,
     dragging: bool,
@@ -48,9 +49,9 @@ pub struct SelectionState {
 
 impl SelectionState {
     /// Remember a press without selecting. The next dragging move promotes it.
-    pub fn arm(&mut self, key: &str, ix: usize) -> bool {
+    pub fn arm(&mut self, key: &TextKey, ix: usize) -> bool {
         let changed = self.has_selection();
-        self.anchor_key = key.to_string();
+        self.anchor_key = Some(key.clone());
         self.anchor_ix = ix;
         self.dragging = false;
         self.forward = None;
@@ -84,7 +85,7 @@ impl SelectionState {
     /// Begin with an immediate span — double or triple click inside one element.
     pub fn begin_with_span(
         &mut self,
-        key: &SharedString,
+        key: &TextKey,
         text: &SharedString,
         range: Range<usize>,
     ) -> bool {
@@ -94,7 +95,7 @@ impl SelectionState {
             range: range.clone(),
         }];
         let changed = self.spans != spans;
-        self.anchor_key = key.to_string();
+        self.anchor_key = Some(key.clone());
         self.anchor_ix = range.start;
         self.dragging = true;
         self.forward = None;
@@ -118,7 +119,7 @@ impl SelectionState {
         }
         let spans = if let Some(anchor_element) = elements
             .iter()
-            .position(|element| element.key.as_ref() == self.anchor_key)
+            .position(|element| Some(&element.key) == self.anchor_key.as_ref())
         {
             let anchor = (anchor_element, self.anchor_ix);
             self.forward = Some(anchor <= head);
@@ -167,13 +168,13 @@ impl SelectionState {
     }
 
     /// The wash range for `key` this frame. `None` means nothing to paint.
-    pub fn wash_range(&self, key: &str) -> Option<Range<usize>> {
+    pub fn wash_range(&self, key: &TextKey) -> Option<Range<usize>> {
         if !self.active {
             return None;
         }
         self.spans
             .iter()
-            .find(|s| s.key.as_ref() == key && !s.range.is_empty())
+            .find(|s| s.key == *key && !s.range.is_empty())
             .map(|s| s.range.clone())
     }
 
@@ -352,7 +353,7 @@ mod tests {
     fn spans_within_one_element() {
         let spans = resolve_spans(&elems(), (0, 6), (0, 15));
         assert_eq!(spans.len(), 1);
-        assert_eq!(spans[0].key, "p1");
+        assert_eq!(spans[0].key, TextKey::from("p1"));
         assert_eq!(&spans[0].text[spans[0].range.clone()], "paragraph");
         assert_eq!(resolve_spans(&elems(), (0, 15), (0, 6)), spans);
     }
@@ -370,15 +371,15 @@ mod tests {
     #[test]
     fn drag_lifecycle_and_copy_joins() {
         let mut sel = SelectionState::default();
-        sel.arm("p1", 6);
+        sel.arm(&"p1".into(), 6);
         assert!(sel.promote_pending());
         assert!(sel.is_dragging());
         let spans = resolve_spans(&elems(), (0, 6), (1, 6));
         assert!(sel.update_spans(spans.clone()));
         assert!(!sel.update_spans(spans));
-        assert_eq!(sel.wash_range("p1"), Some(6..15));
-        assert_eq!(sel.wash_range("p2"), Some(0..6));
-        assert_eq!(sel.wash_range("p3"), None);
+        assert_eq!(sel.wash_range(&"p1".into()), Some(6..15));
+        assert_eq!(sel.wash_range(&"p2".into()), Some(0..6));
+        assert_eq!(sel.wash_range(&"p3".into()), None);
         assert_eq!(
             {
                 sel.end_active_drag();
@@ -397,7 +398,7 @@ mod tests {
     #[test]
     fn drag_survives_forward_virtualization() {
         let mut sel = SelectionState::default();
-        sel.arm("p1", 6);
+        sel.arm(&"p1".into(), 6);
         assert!(sel.promote_pending());
         assert!(sel.update_drag(&elems(), (2, 5)));
         let shifted = [
@@ -424,7 +425,7 @@ mod tests {
     #[test]
     fn drag_survives_backward_virtualization() {
         let mut sel = SelectionState::default();
-        sel.arm("p5", 4);
+        sel.arm(&"p5".into(), 4);
         assert!(sel.promote_pending());
         let first = [reg("p3", "third"), reg("p4", "fourth"), reg("p5", "fifth")];
         assert!(sel.update_drag(&first, (0, 2)));
@@ -447,7 +448,7 @@ mod tests {
     #[test]
     fn virtualized_drag_requires_overlap() {
         let mut sel = SelectionState::default();
-        sel.arm("p1", 6);
+        sel.arm(&"p1".into(), 6);
         assert!(sel.promote_pending());
         assert!(sel.update_drag(&elems(), (2, 5)));
         let unrelated = [reg("p8", "eighth"), reg("p9", "ninth")];
@@ -461,7 +462,7 @@ mod tests {
     #[test]
     fn virtualized_drag_waits_until_direction_is_known() {
         let mut sel = SelectionState::default();
-        sel.arm("p1", 6);
+        sel.arm(&"p1".into(), 6);
         assert!(sel.promote_pending());
         let shifted = [reg("p2", "second"), reg("p3", "third")];
         assert!(!sel.update_drag(&shifted, (1, 3)));
@@ -471,7 +472,7 @@ mod tests {
     #[test]
     fn empty_click_clears_on_release() {
         let mut sel = SelectionState::default();
-        sel.arm("p1", 3);
+        sel.arm(&"p1".into(), 3);
         assert!(sel.promote_pending());
         sel.end_active_drag();
         assert_eq!(sel.selected_text(), None);
@@ -480,7 +481,7 @@ mod tests {
     #[test]
     fn tap_does_not_select_until_drag() {
         let mut sel = SelectionState::default();
-        sel.arm("p1", 3);
+        sel.arm(&"p1".into(), 3);
         assert!(sel.is_pending());
         assert!(!sel.has_selection());
         assert!(!sel.is_dragging());
@@ -492,7 +493,7 @@ mod tests {
     #[test]
     fn pending_press_promotes_on_drag() {
         let mut sel = SelectionState::default();
-        sel.arm("p1", 6);
+        sel.arm(&"p1".into(), 6);
         assert!(sel.promote_pending());
         assert!(!sel.promote_pending());
         assert!(sel.is_dragging());
@@ -512,7 +513,7 @@ mod tests {
     fn double_click_span() {
         let mut sel = SelectionState::default();
         sel.begin_with_span(&"p1".into(), &"hello world".into(), 6..11);
-        assert_eq!(sel.wash_range("p1"), Some(6..11));
+        assert_eq!(sel.wash_range(&"p1".into()), Some(6..11));
         assert_eq!(
             {
                 sel.end_active_drag();
@@ -548,7 +549,7 @@ mod tests {
     fn logical_texts_always_separate() {
         let elements = vec![reg("7:0", "let a = 1;"), reg("7:1", "let b = 2;")];
         let mut sel = SelectionState::default();
-        sel.arm("7:0", 0);
+        sel.arm(&"7:0".into(), 0);
         assert!(sel.promote_pending());
         assert!(sel.update_spans(resolve_spans(&elements, (0, 0), (1, 10))));
         assert_eq!(

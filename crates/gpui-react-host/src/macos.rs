@@ -170,7 +170,7 @@ impl NativeHost {
                         };
                         let output = session.clone();
                         let result = window_handle.update(cx, |host, window, cx| {
-                            let reply = host.apply(transaction, window, cx)?;
+                            let reply = host.apply_prepared(transaction, window, cx)?;
                             // This defer follows native Emit and subscription-retirement
                             // effects. JS receives earlier events before retiring callbacks.
                             cx.defer(move |_| output.emit(serde_json::json!({"reply":reply})));

@@ -25,7 +25,7 @@ describe("React commits to the asynchronous native boundary", () => {
     root.renderSync(h("box", null, h("box", null, "nested"), <Counter step={1} />))
     await root.flush()
     const ids = transport.transactions[0].operations.flatMap(op => op.op === "create" ? [op.id] : [])
-    expect(ids).toEqual([1, 2, 3, 4])
+    expect(ids).toEqual([0, 1, 2, 3])
     await root.unmount()
   })
   it("groups committed nodes and layout-effect commands; refs only query asynchronously", async () => {
@@ -42,7 +42,7 @@ describe("React commits to the asynchronous native boundary", () => {
     await root.flush()
     await completion
     expect(transport.transactions).toHaveLength(1)
-    expect(transport.transactions[0].operations.map(op => op.op)).toEqual(["create", "place", "command"])
+    expect(transport.transactions[0].operations.map(op => op.op)).toEqual(["create", "command"])
     const answer = ref.current!.query("count")
     expect(answer).toBeInstanceOf(Promise)
     await expect(answer).resolves.toBe(42)

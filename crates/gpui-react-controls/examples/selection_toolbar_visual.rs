@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 mod support;
 use gpui::{prelude::*, *};
-use gpui_react::{Component, FrameInfo, ReactChildren, ReactCommands, ReactQueries, ReactView};
+use gpui_react::{Component, FrameInfo, ReactCommands, ReactQueries, ReactView};
 use gpui_react_controls::{
     Color, Document, DocumentCommand, DocumentProps, Length, Style, document_text,
     geometry::{Offset, Rect},
@@ -76,7 +76,7 @@ impl Render for Paragraph {
         div().relative().w_full().child(text).child(
             canvas(
                 move |_, window, cx| {
-                    let range = document.upgrade()?.read(cx).selected_range(KEY, &source)?;
+                    let range = document.upgrade()?.read(cx).selected_range(&KEY.into(), &source)?;
                     // The preceding text has completed prepaint. This is GPUI's
                     // current shaped layout, not a saved JS measurement.
                     let anchor = layout.position_for_index(range.end)?
@@ -153,7 +153,8 @@ fn document_props(props: &Props) -> DocumentProps {
             line_height: Some(props.font_size + 8.),
             color: Some(Color(rgb(0xffffff).into())),
             ..Default::default()
-        },
+        }
+        .into(),
         ..Default::default()
     }
 }
@@ -168,7 +169,7 @@ impl Render for SelectionPanel {
 }
 impl ReactView for SelectionPanel {
     type Props = Props;
-    fn create(props: Props, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn create(props: Props, _: &mut Window, cx: &mut Context<Self>) -> Self {
         let document = cx.new(|cx| Document::new(document_props(&props), cx));
         let toolbar = cx.new(|_| Toolbar {
             document: document.downgrade(),
@@ -184,7 +185,7 @@ impl ReactView for SelectionPanel {
             checked_frames: 0,
         });
         document.update(cx, |doc, cx| {
-            doc.set_children(vec![paragraph.clone().into()], window, cx)
+            doc.set_native_children(vec![paragraph.clone().into()], cx)
         });
         Self {
             document,
@@ -259,7 +260,7 @@ fn main() {
     assert_eq!(before["document"]["selection"], "target");
     assert!(before["checkedFrames"].as_u64().unwrap() > 0);
     for (width, font) in [(130., 20.), (240., 18.), (180., 24.)] {
-        h.apply(json!([{"op":"props","id":1,"props":props(width,font,SOURCE)}]));
+        h.apply(json!([{"op":"props","id":1,"component":"selection-panel","props":props(width,font,SOURCE)}]));
         h.draw();
         let resized = h.query(1);
         assert_eq!(resized["document"]["selection"], "target");
@@ -330,7 +331,7 @@ fn main() {
         .unwrap()
         .save("/tmp/bridge-selection-toolbar.png")
         .unwrap();
-    h.apply(json!([{"op":"props","id":1,"props":props(180.,24.,"alpha bravo charlie delta echo change")} ]));
+    h.apply(json!([{"op":"props","id":1,"component":"selection-panel","props":props(180.,24.,"alpha bravo charlie delta echo change")} ]));
     h.draw();
     assert!(
         h.query(1)["toolbar"].is_null(),

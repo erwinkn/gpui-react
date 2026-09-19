@@ -1,8 +1,8 @@
-use crate::{Style, geometry::Painted};
+use crate::{SharedStyle, geometry::Painted};
 use gpui::{prelude::*, *};
-use gpui_react::{ReactChildren, ReactCommands, ReactEvents, ReactQueries, ReactView};
+use gpui_react::{Children, ReactChildren, ReactCommands, ReactEvents, ReactQueries, ReactView};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, ops::Range};
+use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -14,7 +14,7 @@ pub enum Alignment {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListProps {
-    pub style: Style,
+    pub style: SharedStyle,
     /// None means that all logical rows are supplied as children.
     pub item_count: Option<usize>,
     pub window_start: usize,
@@ -78,10 +78,6 @@ pub struct Anchor {
     pub index: usize,
     pub offset: f32,
 }
-struct Row {
-    view: AnyView,
-    focus: FocusHandle,
-}
 
 #[derive(PartialEq)]
 struct TextMetrics {
@@ -109,9 +105,11 @@ impl TextMetrics {
     }
 }
 /// GPUI ListState is the sole owner of row geometry and native scroll physics.
+/// Rows are React children rendered on demand from the host tree.
 pub struct VirtualList {
     props: ListProps,
-    rows: Vec<Row>,
+    rows: Vec<u32>,
+    children: Option<Children>,
     state: ListState,
     estimate: Pixels,
     revision: u64,
@@ -131,6 +129,7 @@ impl VirtualList {
         Self {
             props,
             rows: Vec::new(),
+            children: None,
             state,
             estimate,
             revision: 0,
@@ -172,16 +171,6 @@ impl VirtualList {
             ..start
                 .saturating_add(self.rows.len())
                 .min(self.state.item_count())
-    }
-    fn set_focus_handles(&self) {
-        let count = self.supplied().len();
-        self.state.set_item_focus_handles(
-            self.start(),
-            self.rows
-                .iter()
-                .take(count)
-                .map(|row| Some(row.focus.clone())),
-        );
     }
     pub fn snapshot(&self) -> ListSnapshot {
         let anchor = self.state.logical_scroll_top();
@@ -286,21 +275,28 @@ impl Render for VirtualList {
         let this = cx.weak_entity();
         let revision = self.revision;
         let item = cx.processor(|this, index: usize, window, cx| {
-            let Some(row) = index
+            let estimate = this.estimate;
+            let placeholder = move || div().w_full().h(estimate).into_any_element();
+            let Some(local) = index
                 .checked_sub(this.start())
-                .and_then(|local| this.rows.get(local))
+                .filter(|local| *local < this.rows.len())
             else {
                 this.request_row(index, window, cx);
-                return div().w_full().h(this.estimate).into_any_element();
+                return placeholder();
+            };
+            let Some(row) = this
+                .children
+                .as_ref()
+                .and_then(|children| children.render(local, window, cx))
+            else {
+                return placeholder();
             };
             let owner = cx.weak_entity();
             div()
-                .id(("row", row.view.entity_id()))
+                .id(("row", this.rows[local]))
                 .w_full()
-                .track_focus(&row.focus)
-                .tab_stop(false)
                 .block_mouse_except_scroll()
-                .child(row.view.clone())
+                .child(row)
                 .on_painted(move |_, _, cx| {
                     owner
                         .update(cx, |this, _| {
@@ -408,7 +404,7 @@ impl Element for ListLayout {
     ) {
         let owner = self.owner.clone();
         crate::document::register_scroll_area(
-            owner.entity_id(),
+            owner.entity_id().as_u64(),
             bounds,
             window,
             cx,
@@ -475,10 +471,6 @@ impl ReactView for VirtualList {
                 self.state.scroll_to(top);
             }
         } else {
-            if remapped {
-                self.state
-                    .set_item_focus_handles(old_range.start, old_range.map(|_| None));
-            }
             let old = self.state.item_count();
             if count != old {
                 self.state.splice_with_uniform_height(
@@ -497,9 +489,6 @@ impl ReactView for VirtualList {
         }
         self.props = props;
         self.estimate = estimate;
-        if rebuilt || remapped {
-            self.set_focus_handles();
-        }
         if style_changed || remapped {
             self.state.remeasure_items(self.supplied());
         }
@@ -511,25 +500,25 @@ impl ReactView for VirtualList {
     }
 }
 impl ReactChildren for VirtualList {
-    fn children_changed(&mut self, children: &[EntityId], _: &mut Window, cx: &mut Context<Self>) {
-        let changed: std::collections::HashSet<_> = children.iter().copied().collect();
-        let start = self.start();
-        for (index, row) in self.rows.iter().enumerate() {
-            if changed.contains(&row.view.entity_id()) && start + index < self.state.item_count() {
-                self.state.remeasure_items(start + index..start + index + 1);
+    fn child_changed(&mut self, child: u32, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(index) = self.rows.iter().position(|row| *row == child) {
+            let index = self.start() + index;
+            if index < self.state.item_count() {
+                self.state.remeasure_items(index..index + 1);
             }
         }
         self.revision += 1;
         cx.notify();
     }
-    fn set_children(&mut self, children: Vec<AnyView>, _: &mut Window, cx: &mut Context<Self>) {
-        if self.rows.iter().map(|row| &row.view).eq(children.iter()) {
+    fn set_children(&mut self, children: Children, _: &mut Window, cx: &mut Context<Self>) {
+        if children.ids() == self.rows.as_slice() {
+            self.children = Some(children);
             return;
         }
-        let old_range = self.supplied();
+        let rows = children.ids().to_vec();
         let top = self.state.logical_scroll_top();
         let anchored = if self.props.item_count.is_none() && !self.state.is_following_tail() {
-            self.rows.get(top.item_ix).map(|row| row.view.entity_id())
+            self.rows.get(top.item_ix).copied()
         } else {
             None
         };
@@ -537,53 +526,34 @@ impl ReactChildren for VirtualList {
             && !self.state.is_following_tail()
             && top.item_ix == 0
             && top.offset_in_item <= px(0.);
-        let mut focus: HashMap<_, _> = self
-            .rows
-            .iter()
-            .map(|row| (row.view.entity_id(), row.focus.clone()))
-            .collect();
-        let rows: Vec<Row> = children
-            .into_iter()
-            .map(|view| {
-                let focus = focus
-                    .remove(&view.entity_id())
-                    .unwrap_or_else(|| cx.focus_handle());
-                Row { view, focus }
-            })
-            .collect();
         if self.props.item_count.is_none() {
             let prefix = self
                 .rows
                 .iter()
                 .zip(&rows)
-                .take_while(|(a, b)| a.view.entity_id() == b.view.entity_id())
+                .take_while(|(a, b)| a == b)
                 .count();
             let suffix = self.rows[prefix..]
                 .iter()
                 .rev()
                 .zip(rows[prefix..].iter().rev())
-                .take_while(|(a, b)| a.view.entity_id() == b.view.entity_id())
+                .take_while(|(a, b)| a == b)
                 .count();
-            self.state.splice_focusable_with_uniform_height(
+            self.state.splice_with_uniform_height(
                 prefix..self.rows.len() - suffix,
-                rows[prefix..rows.len() - suffix]
-                    .iter()
-                    .map(|row| Some(row.focus.clone())),
+                rows.len() - prefix - suffix,
                 self.estimate,
             );
-        } else {
-            self.state
-                .set_item_focus_handles(old_range.start, old_range.map(|_| None));
         }
         self.rows = rows;
+        self.children = Some(children);
         if self.props.item_count.is_some() {
-            self.set_focus_handles();
             self.state.remeasure_items(self.supplied());
         }
         if pinned_top {
             self.state.scroll_to(ListOffset::default());
         } else if let Some(index) =
-            anchored.and_then(|id| self.rows.iter().position(|row| row.view.entity_id() == id))
+            anchored.and_then(|id| self.rows.iter().position(|row| *row == id))
         {
             self.state.scroll_to(ListOffset {
                 item_ix: index,

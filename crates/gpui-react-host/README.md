@@ -1,7 +1,7 @@
 # Native application host
 
 This crate supplies the macOS AppKit loop and N-API worker channel for
-`gpui-react`. It has no dependency on the previous `gpuix-native` renderer.
+`gpui-react`.
 The worker retains only a session handle and queued typed transactions. It does
 not retain a Rust description tree or live GPUI objects.
 
@@ -21,12 +21,11 @@ first complete example.
 
 The exported methods are `bridgeRuntimeVersion`, `NativeHost` with `id`, `run`
 and `close`, and `NativeClient` with `send`, `receive` and `close`. Use the
-JavaScript helpers in `@gpuix/bridge/application` for normal application entry.
-They require an explicit composition object in both host and worker. No default
-GPUiX binary is loaded.
+JavaScript helpers in `@gpui-react/core/application` for normal application entry.
+They require an explicit composition object in both host and worker.
 
 The default [`gpui-react-runtime`](../gpui-react-runtime/README.md) composition
-registers the standard controls and is packaged as `@gpuix/bridge-runtime`.
+registers the standard controls and is packaged as `@gpui-react/runtime`.
 Applications can pass that package to both JS helpers. Custom native views
 still require an application composition in its place.
 

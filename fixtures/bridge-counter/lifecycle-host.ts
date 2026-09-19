@@ -1,4 +1,4 @@
-import { runApplication } from "@gpuix/bridge/application"
+import { runApplication } from "@gpui-react/core/application"
 import { writeFileSync } from "node:fs"
 const bindings = require("./counter.node")
 await runApplication(bindings, new URL("./lifecycle-worker.tsx", import.meta.url), { show: false })

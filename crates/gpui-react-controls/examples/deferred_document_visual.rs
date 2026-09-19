@@ -1,11 +1,17 @@
 #[allow(dead_code)]
 mod support;
 use gpui::{prelude::*, *};
-use gpui_react::{Component, ReactChildren, ReactQueries, ReactView};
-use gpui_react_controls::{Document, Text, TextProps, document::DocumentSnapshot, document_text};
+use gpui_react::{Component, ReactQueries, ReactView};
+use gpui_react_controls::{Document, document::DocumentSnapshot, document_text};
 use serde_json::{Value, json};
 use support::*;
 
+struct InnerText;
+impl Render for InnerText {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        document_text("inner", "inner token")
+    }
+}
 struct FloatingText {
     inner: Entity<Document>,
 }
@@ -40,7 +46,7 @@ impl Render for FloatingText {
 }
 impl ReactView for FloatingText {
     type Props = ();
-    fn create(_: (), window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn create(_: (), _: &mut Window, cx: &mut Context<Self>) -> Self {
         let inner = cx.new(|cx| {
             Document::new(
                 serde_json::from_value(json!({
@@ -50,15 +56,9 @@ impl ReactView for FloatingText {
                 cx,
             )
         });
-        let text = cx.new(|_| {
-            Text::new(TextProps {
-                text: "inner token".into(),
-                text_key: Some("inner".into()),
-                ..Default::default()
-            })
-        });
+        let text: AnyView = cx.new(|_| InnerText).into();
         inner.update(cx, |doc, cx| {
-            doc.set_children(vec![text.into()], window, cx)
+            doc.set_native_children(vec![text], cx)
         });
         Self { inner }
     }

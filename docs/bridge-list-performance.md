@@ -19,7 +19,7 @@ allocator on the executing thread.
 | Binding after | 100,000 | 3.04 µs | 3.21 µs | 11,792 |
 | Direct GPUI hinted splice after | 100,000 | 3.13 µs | 3.33 µs | 11,792 |
 
-The before versions are GPUiX `6f867ea` and GPUI `bea32f070b`. The new GPUI
+The before versions are the previous implementation `6f867ea` and GPUI `bea32f070b`. The new GPUI
 version is `25402064a7`. The test measures
 native mutation work. It excludes React reconciliation, JSON encoding/decoding,
 worker transport, layout, paint, and physical presentation. The small difference
@@ -53,16 +53,9 @@ anchor shifts, removal, an allocation-growth guard, and the existing GPU list
 scenarios. The allocation guard compares one append at 1,000 and 100,000 rows;
 it does not depend on machine timing. All 32 GPUI list tests pass.
 
-Run the manual measurement separately from other builds:
-
-```sh
-CARGO_TARGET_DIR=/tmp/gpuix-framework-target CARGO_BUILD_JOBS=3 \
-  cargo test --manifest-path crates/gpui-react-controls/Cargo.toml \
-  --release --test list_cost -- --ignored --nocapture
-```
-
-The allocation and measurement-retention regressions run in the normal controls
-test suite. [Raw results](./benchmarks/bridge-list-count.json) include the direct
+The manual `list_cost` benchmark was retired when rows became host-owned data
+rather than entities; the measurement-retention regressions run in the normal
+controls test suite through a `Host`. [Raw results](./benchmarks/bridge-list-count.json) include the direct
 unhinted lower bound and the old whole-index pattern. The unhinted lower bound
 does less work and is not a substitute for the equivalent hinted comparison.
 

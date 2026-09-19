@@ -25,7 +25,7 @@ fn main() {
     assert_eq!(
         h.query(1)["anchor"]["index"],
         50_000,
-        "focus ownership must not erase unpainted row estimates"
+        "a native wheel must move through unpainted row estimates"
     );
     h.command(1, json!({"type":"scrollTo","index":0}));
     h.draw();
@@ -39,7 +39,7 @@ fn main() {
             && e["range"]["end"].as_u64().unwrap() > 50_000),
         "distant native jump did not request rows: {events:?}"
     );
-    let mut ops = vec![json!({"op":"props","id":1,"props":props(Some(100_000),49_998,false)})];
+    let mut ops = vec![json!({"op":"props","id":1,"component":"list","props":props(Some(100_000),49_998,false)})];
     for id in 2..12 {
         ops.push(json!({"op":"remove","id":id}));
     }
@@ -94,7 +94,7 @@ fn main() {
     assert_eq!(h.query(29)["painted"]["bounds"]["y"], before);
     println!("PASS prepend at top, overflow transition, and reader anchor");
 
-    h.apply(json!([{"op":"props","id":22,"props":props(None,0,true)}]));
+    h.apply(json!([{"op":"props","id":22,"component":"list","props":props(None,0,true)}]));
     h.draw();
     assert!(h.query(22)["followingTail"].as_bool().unwrap());
     h.apply(json!([row(37, 32), place(37, Some(22), None)]));
@@ -126,7 +126,7 @@ fn main() {
     h.draw();
     let anchor = h.command_op(22, json!({"type":"scrollTo","index":1,"offset":-40}));
     h.apply(
-        json!([{"op":"props","id":35,"props":{"text":"taller row","style":{"height":100}}},anchor]),
+        json!([{"op":"props","id":35,"component":"text","props":{"text":"taller row","measure":true,"style":{"height":100}}},anchor]),
     );
     h.draw();
     assert_eq!(
@@ -149,7 +149,7 @@ fn main() {
     h.draw();
     let anchor = h.command_op(22, json!({"type":"scrollTo","index":2,"offset":-40}));
     h.apply(json!([
-        {"op":"props","id":35,"props":{"text":"taller existing row","style":{"height":140}}},
+        {"op":"props","id":35,"component":"text","props":{"text":"taller existing row","measure":true,"style":{"height":140}}},
         row(39,34),place(39,Some(22),None),anchor
     ]));
     h.draw();
@@ -174,7 +174,7 @@ fn main() {
         ops.push(create(
             42 + i,
             "text",
-            json!({"text":format!("inherited row {i}")}),
+            json!({"text":format!("inherited row {i}"),"measure":true}),
         ));
         ops.push(place(42 + i, Some(41), None));
     }
@@ -185,7 +185,7 @@ fn main() {
     h.draw();
     let anchor = h.command_op(41, json!({"type":"scrollTo","index":1,"offset":-20}));
     h.apply(json!([
-        {"op":"props","id":40,"props":{"style":{"width":320,"fontSize":32,"lineHeight":40}}},
+        {"op":"props","id":40,"component":"container","props":{"style":{"width":320,"fontSize":32,"lineHeight":40}}},
         anchor
     ]));
     h.draw();

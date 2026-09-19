@@ -1,15 +1,15 @@
 # React wrappers for native GPUI controls
 
-`@gpuix/bridge-controls` supplies typed React wrappers. The default
-`@gpuix/bridge-runtime` package registers all controls below. A custom application
+`@gpui-react/controls` supplies typed React wrappers. The default
+`@gpui-react/runtime` package registers all controls below. A custom application
 composition must register the matching
-[`gpui-react-controls`](https://github.com/erwinkn/gpuix/tree/bridge/minimal-react-gpui/crates/gpui-react-controls)
-Rust crate. React and `@gpuix/bridge` are peer dependencies. Install matching
+[`gpui-react-controls`](https://github.com/erwinkn/gpui-react/tree/bridge/minimal-react-gpui/crates/gpui-react-controls)
+Rust crate. React and `@gpui-react/core` are peer dependencies. Install matching
 versions of the bridge packages.
 
 ```tsx
 import { createRef } from "react"
-import { Input, type InputRef } from "@gpuix/bridge-controls"
+import { Input, type InputRef } from "@gpui-react/controls"
 
 const input = createRef<InputRef>()
 root.render(<Input
@@ -97,11 +97,13 @@ movement, drag autoscroll, clipboard operations, and undo stay in Rust.
 
 ## Containers and text
 
-`Container` renders a normal GPUI div. It owns its child handles, focus handle,
-and scroll handle. Props are `style`, `scroll` (`none`, `x`, `y`, or `both`),
-`focusable` (default false), `label`, `scrollGroup`, and `blockMouse` (default
-false). Layout defaults to a flex column. Text styles inherit through GPUI.
-Children are ordinary native views. Keyed React moves retain their identities.
+`Container` renders a normal GPUI div from host-owned data; it is not a GPUI
+entity. A focus handle exists only when `focusable` is set and a scroll handle
+only when `scroll` is not `none`. Props are `style`, `scroll` (`none`, `x`, `y`,
+or `both`), `focusable` (default false), `label`, `scrollGroup`, `blockMouse`
+(default false), and `measure` (default false). Layout defaults to a flex
+column. Text styles inherit through GPUI. Children are host-owned nodes or
+native views. Keyed React moves retain their identities.
 
 Normal GPUI hit testing allows a parent to receive clicks through text and
 nested layout containers. `blockMouse` explicitly isolates the mouse region
@@ -118,7 +120,9 @@ both deltas. An x-only viewport does not turn vertical wheel motion into x motio
 Commands are `focus`, `blur`, and `scrollTo: {x, y}`. Focus requires `focusable`.
 Scroll coordinates are positive distances from the origin; GPUI clamps them at
 layout. `query(null)` returns `{painted, revision, offset, childCount, focused}`.
-`painted.bounds` is the outer layout box, including padding and border.
+`painted` is null unless `measure` is set; recording bounds costs a paint
+callback per frame. When set, `painted.bounds` is the outer layout box,
+including padding and border.
 
 For locked horizontal panes, give x-only containers the same nonempty
 `scrollGroup` string. They then use one GPUI `ScrollHandle` within that window.
@@ -133,12 +137,14 @@ Use native GPUI text runs for multiple styles inside one logical text. Primitive
 strings outside `Text` remain separate native layout items.
 
 `textKey` gives text a stable logical identity within a `Document`. Supply it
-when virtualized rows can unmount and remount. Without it, the native entity
-provides an identity for its own lifetime. `selectable` and `searchable` both
+when virtualized rows can unmount and remount. Without it, the host node id is
+the identity for the node's lifetime, reported in snapshots as `text:<id>`;
+names starting with `text:` followed by digits are reserved for that form. `selectable` and `searchable` both
 default to true. Set either to false independently. `matchIndexOffset` is an
-optional absolute match base for this text in a virtualized source.
-`query(null)` returns `{text, revision, painted}`. The value is current native
-text; the geometry is from its last paint.
+optional absolute match base for this text in a virtualized source. `measure`
+(default false) records painted bounds. `query(null)` returns
+`{text, revision, painted}`. The value is current native text; `painted` is
+null unless `measure` is set, and otherwise describes the last paint.
 
 ## Document text services
 
@@ -150,7 +156,7 @@ through the Rust `document_text` helper.
 
 ```tsx
 import { createRef } from "react"
-import { Document, Text, type DocumentRef } from "@gpuix/bridge-controls"
+import { Document, Text, type DocumentRef } from "@gpui-react/controls"
 
 const document = createRef<DocumentRef>()
 root.render(<Document ref={document} search={{ query: "reader", activeIndex: 0 }}>
@@ -272,8 +278,9 @@ conditional content, or a Suspense boundary. Its props are:
 
 Large logical lists do not need large React trees. For example, supply sixty
 children starting at 49,998 with `itemCount={100_000}`. GPUI keeps its native
-height index for the logical count and builds visible row elements. The bridge
-retains only the supplied native views. The height index still uses memory
+height index for the logical count and builds visible row elements. The host
+retains only the supplied row descriptions, and the list builds a row's
+elements only when GPUI lays it out. The height index still uses memory
 proportional to the logical row count.
 
 `needRows` reports `{range: {start, end}}` when layout needs absent rows. `end` is
@@ -298,8 +305,8 @@ inherited typography changes and invalidates measured heights before resolving
 anchors. A changed row window and a scroll
 command from a synchronous layout effect therefore reach the same native layout.
 For a focus target not yet rendered, scroll its row into the viewport before
-sending its focus command. An already rendered focused row uses GPUI's native
-focus tracking; focus registration does not erase height estimates.
+sending its focus command. Rows have no focus handles of their own; a focusable
+container inside a row owns its focus.
 
 A prepend at the top shows the new first rows. A reader below the top retains
 their row and pixel offset. Keyed reorders also retain an existing reader anchor.

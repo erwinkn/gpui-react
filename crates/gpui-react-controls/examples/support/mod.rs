@@ -12,6 +12,7 @@ pub struct Harness {
     pub events: Arc<Mutex<Vec<Emission>>>,
     sequence: u64,
     request: u64,
+    components: std::collections::HashMap<u64, String>,
 }
 impl Harness {
     pub fn new(width: f32, height: f32) -> Self {
@@ -39,11 +40,20 @@ impl Harness {
             events,
             sequence: 0,
             request: 0,
+            components: Default::default(),
         }
     }
     pub fn apply(&mut self, operations: Value) -> gpui_react::protocol::Reply {
         self.sequence += 1;
-        let tx = serde_json::from_value(
+        for operation in operations.as_array().unwrap() {
+            if operation["op"] == "create" {
+                self.components.insert(
+                    operation["id"].as_u64().unwrap(),
+                    operation["component"].as_str().unwrap().to_owned(),
+                );
+            }
+        }
+        let tx = gpui_react::protocol::Transaction::from_json(&
             json!({"version":1,"sequence":self.sequence,"operations":operations}),
         )
         .unwrap();
@@ -61,7 +71,8 @@ impl Harness {
     pub fn query(&mut self, id: u64) -> Value {
         self.request += 1;
         let request = self.request;
-        self.apply(json!([{"op":"query","id":id,"request":request,"value":null}]))
+        let component = self.components[&id].clone();
+        self.apply(json!([{"op":"query","id":id,"component":component,"request":request,"value":null}]))
             .results
             .remove(0)
             .value
@@ -78,7 +89,7 @@ impl Harness {
     }
     pub fn command_op(&mut self, id: u64, value: Value) -> Value {
         self.request += 1;
-        json!({"op":"command","id":id,"request":self.request,"value":value})
+        json!({"op":"command","id":id,"component":self.components[&id],"request":self.request,"value":value})
     }
     pub fn draw(&mut self) {
         self.cx.run_until_parked();
@@ -141,6 +152,6 @@ pub fn row(id: u64, index: usize) -> Value {
     create(
         id,
         "text",
-        json!({"text":format!("row {index}"),"style":{"height":20,"lineHeight":20,"fontSize":14,"color":"white"}}),
+        json!({"text":format!("row {index}"),"measure":true,"style":{"height":20,"lineHeight":20,"fontSize":14,"color":"white"}}),
     )
 }

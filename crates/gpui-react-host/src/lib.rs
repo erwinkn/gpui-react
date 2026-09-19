@@ -1,6 +1,6 @@
 //! A native UI loop and bounded worker channel. The worker owns no Rust UI tree.
 use futures::channel::mpsc;
-use gpui_react::{Registry, protocol::Transaction};
+use gpui_react::{Decoder, Prepared, Registry};
 use napi::{Env, Error, Result, bindgen_prelude::AsyncTask};
 use napi_derive::napi;
 use serde_json::Value;
@@ -51,7 +51,7 @@ fn registry() -> anyhow::Result<Registry> {
 
 #[derive(Default)]
 struct Queues {
-    commands: VecDeque<(Transaction, usize)>,
+    commands: VecDeque<(Prepared, usize)>,
     command_bytes: usize,
     messages: VecDeque<String>,
     message_bytes: usize,
@@ -118,7 +118,7 @@ impl Session {
         self.changed.notify_all();
     }
 
-    fn pop(&self) -> Option<Transaction> {
+    fn pop(&self) -> Option<Prepared> {
         let mut queues = self.queues.lock().unwrap();
         let (transaction, bytes) = queues.commands.pop_front()?;
         queues.command_bytes -= bytes;
@@ -129,6 +129,7 @@ impl Session {
 #[napi]
 pub struct NativeClient {
     session: Arc<Session>,
+    decoder: Mutex<Decoder>,
 }
 
 #[napi]
@@ -155,18 +156,26 @@ impl NativeClient {
         env.add_env_cleanup_hook(session.clone(), |session| {
             session.close("Application worker unloaded")
         })?;
-        Ok(Self { session })
+        let registry = registry().map_err(|e| Error::from_reason(e.to_string()))?;
+        Ok(Self {
+            session,
+            decoder: Mutex::new(Decoder::new(registry)),
+        })
     }
 
-    /// Decode once on worker admission. Typed transactions cross to the UI;
-    /// component construction and topology validation happen only there.
+    /// Decode to typed data on the worker. The UI thread receives typed
+    /// operations and does no JSON work; it applies them to the host tree.
     #[napi]
     pub fn send(&self, encoded: String) -> Result<()> {
         if encoded.len() > MAX_BYTES {
             return Err(Error::from_reason("Native transaction exceeds byte limit"));
         }
-        let transaction: Transaction =
-            serde_json::from_str(&encoded).map_err(|e| Error::from_reason(e.to_string()))?;
+        let transaction = self
+            .decoder
+            .lock()
+            .unwrap()
+            .parse(&encoded)
+            .map_err(|e| Error::from_reason(format!("Native transaction failed: {e:#}")))?;
         let mut queues = self.session.queues.lock().unwrap();
         if let Some(reason) = &queues.reason {
             return Err(Error::from_reason(reason.clone()));
@@ -235,6 +244,7 @@ mod tests {
         let (_, session, _wake) = Session::new();
         let client = NativeClient {
             session: session.clone(),
+            decoder: Mutex::new(Decoder::new(Registry::default())),
         };
         for sequence in 1..=MAX_TRANSACTIONS {
             client
@@ -253,7 +263,7 @@ mod tests {
                 .is_err()
         );
         for sequence in 1..=MAX_TRANSACTIONS {
-            assert_eq!(session.pop().unwrap().sequence, sequence as u64);
+            assert_eq!(session.pop().unwrap().sequence(), sequence as u64);
         }
         assert_eq!(session.queues.lock().unwrap().command_bytes, 0);
         assert!(session.pop().is_none());

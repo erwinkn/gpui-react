@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import { Fragment, createRef, useLayoutEffect } from "react"
-import { nativeComponent, type NativeRef, type FrameInfo } from "@gpuix/bridge"
-import { attachApplication } from "@gpuix/bridge/application"
-import { Container, Text, type ContainerRef, type Style } from "@gpuix/bridge-controls"
+import { nativeComponent, type NativeRef, type FrameInfo } from "@gpui-react/core"
+import { attachApplication } from "@gpui-react/core/application"
+import { Container, Text, type ContainerRef, type Style } from "@gpui-react/controls"
 
 type Spec = { text: string; documentVersion: number; session: number; rows: object[] }
 type Event = { kind: string; seq: number; documentVersion: number }
@@ -35,7 +35,7 @@ function App({ height = 30, initialText }: { height?: number; initialText?: stri
   }, [])
   return <FrameProbe><Pierre ref={editor} initialSpec={initialText === undefined ? undefined : spec(initialText, 1)} style={{ width: 600, height: 260 }}
     label="Pierre test editor" onEvent={event => events.push(event)}>
-    <Container ref={annotation} style={{ height, background: "#334455" }}>
+    <Container ref={annotation} measure style={{ height, background: "#334455" }}>
       <Text text="Native annotation" />
     </Container>
   </Pierre></FrameProbe>

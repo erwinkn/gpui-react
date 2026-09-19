@@ -1,12 +1,30 @@
 {
-  "name": "@gpuix/bridge-controls",
+  "name": "@gpui-react/controls",
   "version": "0.1.0",
-  "type": "module",
-  "license": "Apache-2.0",
   "description": "React wrappers for ordinary GPUI controls",
-  "exports": {".": {"types": "./dist/index.d.ts", "default": "./dist/index.js"}},
-  "files": ["dist", "README.md", "LICENSE"],
-  "scripts": {"build": "tsc"},
-  "peerDependencies": {"@gpuix/bridge": "^0.1.0", "react": "^19.2.0"},
-  "devDependencies": {"@gpuix/bridge": "workspace:*", "@types/react": "^19.2.0", "typescript": "^5.3.0"}
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "peerDependencies": {
+    "@gpui-react/core": "^0.1.0",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@gpui-react/core": "workspace:*",
+    "@types/react": "^19.2.0",
+    "typescript": "^5.3.0"
+  },
+  "license": "Apache-2.0"
 }

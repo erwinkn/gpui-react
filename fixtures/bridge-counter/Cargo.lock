@@ -1449,7 +1449,9 @@ name = "gpui-react"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "csscolorparser",
  "gpui",
+ "rustc-hash",
  "serde",
  "serde_json",
 ]
@@ -1463,8 +1465,10 @@ dependencies = [
  "gpui",
  "gpui-react",
  "regex",
+ "rustc-hash",
  "serde",
  "serde_json",
+ "smallvec",
  "unicode-segmentation",
  "web-time",
 ]

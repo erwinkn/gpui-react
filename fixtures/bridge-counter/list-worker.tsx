@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { createRef, useLayoutEffect } from "react"
-import { attachApplication } from "@gpuix/bridge/application"
-import { Container, List, Text, type ListRef, type TextRef, type ContainerRef } from "@gpuix/bridge-controls"
+import { attachApplication } from "@gpui-react/core/application"
+import { Container, List, Text, type ListRef, type TextRef, type ContainerRef } from "@gpui-react/controls"
 
 const root = attachApplication(require("./counter.node"))
 const list = createRef<ListRef>()
@@ -11,7 +11,7 @@ function Windowed({ start }: { start: number }) {
   useLayoutEffect(() => { anchor = list.current!.command({ type: "scrollTo", index: start + 2, offset: 3 }) }, [start])
   return <Container style={{ width: 320, height: 180 }}>
     <List ref={list} itemCount={100_000} windowStart={start} estimatedItemHeight={20} style={{ width: 320, height: 100 }}>
-      {Array.from({ length: 60 }, (_, local) => <Text key={start + local} ref={local === 2 ? first : undefined} text={`row ${start + local}`} style={{ height: 20, lineHeight: 20, fontSize: 14 }} />)}
+      {Array.from({ length: 60 }, (_, local) => <Text key={start + local} ref={local === 2 ? first : undefined} measure={local === 2} text={`row ${start + local}`} style={{ height: 20, lineHeight: 20, fontSize: 14 }} />)}
     </List>
   </Container>
 }

@@ -130,7 +130,7 @@ fn main() {
     h.command(1, json!({"type":"clear"}));
     h.draw();
     h.take_events();
-    h.apply(json!([{"op":"props","id":1,"props":props("token",Some(2))}]));
+    h.apply(json!([{"op":"props","id":1,"component":"document","props":props("token",Some(2))}]));
     h.draw();
     assert_eq!(h.query(1)["contentRevision"], revision);
     assert!(
@@ -139,7 +139,7 @@ fn main() {
             .all(|event| event["type"] != "search"),
         "active match changes must not report new search results"
     );
-    h.apply(json!([{"op":"props","id":1,"props":props("native",Some(0))}]));
+    h.apply(json!([{"op":"props","id":1,"component":"document","props":props("native",Some(0))}]));
     h.draw();
     assert_eq!(h.query(1)["matchCount"], 1);
     assert!(
@@ -147,7 +147,7 @@ fn main() {
             .iter()
             .any(|event| event["type"] == "search")
     );
-    h.apply(json!([{"op":"props","id":1,"props":props("final",Some(0))}]));
+    h.apply(json!([{"op":"props","id":1,"component":"document","props":props("final",Some(0))}]));
     h.draw();
     assert_eq!(h.query(1)["matchCount"], 1);
     assert!(
@@ -196,8 +196,8 @@ fn main() {
     .unwrap();
     println!("PASS drag across native components and pointer release outside document bounds");
     h.apply(json!([
-        {"op":"props","id":4,"props":{"text":"chrome token","textKey":"chrome","selectable":false,"searchable":false}},
-        {"op":"props","id":1,"props":props("token",None)}
+        {"op":"props","id":4,"component":"text","props":{"text":"chrome token","textKey":"chrome","selectable":false,"searchable":false}},
+        {"op":"props","id":1,"component":"document","props":props("token",None)}
     ]));
     h.draw();
     assert_eq!(
@@ -239,7 +239,7 @@ fn main() {
     let wrapped = h.query(8);
     assert!(wrapped["ranges"][0]["rects"].as_array().unwrap().len() >= 3);
     let before = wrapped["ranges"][0]["rects"].clone();
-    h.apply(json!([{"op":"props","id":8,"props":{"style":{"width":220,"fontSize":20,"lineHeight":30}}}]));
+    h.apply(json!([{"op":"props","id":8,"component":"document","props":{"style":{"width":220,"fontSize":20,"lineHeight":30}}}]));
     h.draw();
     let after = h.query(8);
     assert_eq!(after["selection"], wrapped["selection"]);

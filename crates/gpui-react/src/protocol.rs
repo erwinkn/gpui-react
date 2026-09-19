@@ -1,54 +1,33 @@
 //! The wire format contains committed changes, never a second retained tree.
-use serde::{Deserialize, Serialize};
+//!
+//! Decoding is one pass: `Registry::parse` reads the transaction text and builds
+//! each operation's typed props as it goes, because every operation names its
+//! component before its props. See `decode.rs`.
+use serde::Serialize;
 use serde_json::Value;
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Transaction {
-    pub version: u32,
-    pub sequence: u64,
-    pub operations: Vec<Operation>,
-}
+/// An encoded transaction. Decoding happens in `Registry::prepare`, which
+/// needs the component registry to know each operation's props type.
+#[derive(Debug)]
+pub struct Transaction(pub(crate) String);
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "camelCase", deny_unknown_fields)]
-pub enum Operation {
-    Create {
-        id: u64,
-        component: String,
-        props: Value,
-        subscription: Option<u64>,
-    },
-    Props {
-        id: u64,
-        props: Value,
-    },
-    Listen {
-        id: u64,
-        subscription: Option<u64>,
-    },
-    Place {
-        parent: Option<u64>,
-        child: u64,
-        before: Option<u64>,
-    },
-    Remove {
-        id: u64,
-    },
-    Hidden {
-        id: u64,
-        hidden: bool,
-    },
-    Command {
-        id: u64,
-        request: u64,
-        value: Value,
-    },
-    Query {
-        id: u64,
-        request: u64,
-        value: Value,
-    },
+impl Transaction {
+    pub fn parse(json: &str) -> serde_json::Result<Self> {
+        Ok(Self(json.to_owned()))
+    }
+    pub fn from_encoded(json: String) -> Self {
+        Self(json)
+    }
+    /// For tests: serialize a JSON value to transaction text.
+    pub fn from_json(value: &Value) -> serde_json::Result<Self> {
+        Ok(Self(value.to_string()))
+    }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 #[derive(Debug, Serialize)]

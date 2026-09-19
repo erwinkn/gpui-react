@@ -1,7 +1,7 @@
 import { appendFileSync, writeFileSync } from "node:fs"
 import { createRef, useEffect, useLayoutEffect } from "react"
-import { attachApplication } from "@gpuix/bridge/application"
-import { nativeComponent, type NativeRef } from "@gpuix/bridge"
+import { attachApplication } from "@gpui-react/core/application"
+import { nativeComponent, type NativeRef } from "@gpui-react/core"
 
 const bindings = require("./counter.node")
 const root = attachApplication(bindings)

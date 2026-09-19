@@ -1,0 +1,54 @@
+{
+ "note": "Worker-side cost measured by fixtures/bridge-counter/js-bench.tsx with a recording transport; medians. Update is one status-line change; unmemoized rows mean React reconciles every row.",
+ "before": {
+  "list5000": {
+   "mount": {
+    "renderMs": 10.153,
+    "sealMs": 4.32,
+    "bytes": 1208456
+   },
+   "update": {
+    "renderMs": 16.746
+   },
+   "jsHeapAfterMountBytes": 9994579
+  }
+ },
+ "after": {
+  "list5000": {
+   "mount": {
+    "renderMs": 7.769,
+    "sealMs": 1.25,
+    "bytes": 1208456
+   },
+   "update": {
+    "renderMs": 15.351
+   },
+   "remove": {
+    "renderMs": 1.44
+   },
+   "jsHeapAfterMountBytes": 8473952
+  },
+  "list5000MemoRows": {
+   "mount": {
+    "renderMs": 11.751,
+    "sealMs": 0.746
+   },
+   "update": {
+    "renderMs": 1.632
+   },
+   "jsHeapAfterMountBytes": 10075548
+  },
+  "list1000": {
+   "mount": {
+    "renderMs": 1.401,
+    "sealMs": 0.182,
+    "bytes": 240456
+   },
+   "update": {
+    "renderMs": 3.044
+   },
+   "jsHeapAfterMountBytes": 1683959
+  }
+ },
+ "plainStringifyMs5000": 0.66
+}

@@ -10,7 +10,7 @@ if (!library) throw Error("Usage: bun fixtures/bridge-pierre/test.ts /path/to/li
 const fixture = import.meta.dir
 async function run(command: string, args: string[], cwd = fixture): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, GPUIX_BACKGROUND: "1", PIERRE_FRAME_PROBE: process.argv.includes("--frames") ? "1" : "0" }, stdio: ["ignore", "pipe", "pipe"] })
+    const child = spawn(command, args, { cwd, env: { ...process.env, PIERRE_FRAME_PROBE: process.argv.includes("--frames") ? "1" : "0" }, stdio: ["ignore", "pipe", "pipe"] })
     let output = ""
     child.stdout.on("data", chunk => { output += chunk })
     child.stderr.on("data", chunk => { output += chunk })

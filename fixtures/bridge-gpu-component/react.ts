@@ -1,5 +1,5 @@
-import { nativeComponent, type NativeRef, type FrameInfo } from "@gpuix/bridge"
-import type { Style, Rect } from "@gpuix/bridge-controls"
+import { nativeComponent, type NativeRef, type FrameInfo } from "@gpui-react/core"
+import type { Style, Rect } from "@gpui-react/controls"
 
 export type Color = [number, number, number, number]
 export interface TextureProps {

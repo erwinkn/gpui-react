@@ -1,9 +1,9 @@
 import assert from "node:assert/strict"
 import { createRef, useLayoutEffect } from "react"
-import { nativeComponent, type NativeRef } from "@gpuix/bridge"
-import { attachApplication } from "@gpuix/bridge/application"
+import { nativeComponent, type NativeRef } from "@gpui-react/core"
+import { attachApplication } from "@gpui-react/core/application"
 
-import { Input, type InputRef, type InputEvent } from "@gpuix/bridge-controls"
+import { Input, type InputRef, type InputEvent } from "@gpui-react/controls"
 
 const bindings = require("./counter.node")
 if (process.env.BRIDGE_COUNTER_MODE === "startup-error") throw Error("Expected worker startup failure")

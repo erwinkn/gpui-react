@@ -2,18 +2,13 @@
 mod allocation;
 use allocation::{Mark, mark, reset_peak};
 use gpui::{prelude::*, *};
-use gpui_react::{Host, ReactChildren, ReactView, Registry, protocol::Transaction};
-use gpui_react_controls::{
-    Color, Container, ContainerProps, Document, DocumentProps, Length, ListProps, Style, Text,
-    TextProps, VirtualList,
-};
-use gpuix_native::{GpuixView, apply_batch_to_tree, retained_tree::RetainedTree};
+use gpui_react::{Host, Registry, protocol::Transaction};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Instant,
 };
 
@@ -83,95 +78,37 @@ impl Render for Raw {
             .child(content)
     }
 }
-fn box_style(height: f32) -> Style {
-    Style {
-        width: Some(Length::Pixels(WIDTH)),
-        height: Some(Length::Pixels(height)),
-        shrink: Some(0.),
-        ..Default::default()
-    }
-}
-fn root_style() -> Style {
-    Style {
-        color: Some(Color(rgb(0xffffff).into())),
-        background: Some(Color(rgb(0x101010).into())),
-        font_size: Some(14.),
-        line_height: Some(ROW),
-        ..box_style(HEIGHT)
-    }
-}
-fn text_props(text: String, height: f32) -> TextProps {
-    TextProps {
-        text,
-        style: box_style(height),
-        ..Default::default()
-    }
-}
 fn row_text(ix: usize) -> String {
     format!("Row {ix:05}: retained native content for the frame comparison")
 }
-fn bridge_text(text: String, height: f32) -> Value {
-    json!({"text":text,"style":{"width":WIDTH,"height":height,"shrink":0}})
+/// Style ids as the reconciler would assign them: 0 root, 1 header, 2 rows.
+fn bridge_text(text: String, style: u32) -> Value {
+    json!({"text":text,"style":style})
 }
 fn encoded(mode: &str, count: usize, virtualized: bool) -> String {
     if mode == "bridge" {
         let mut ops = vec![
-            json!({"op":"create","id":1,"component":"document","props":{"style":{"width":WIDTH,"height":HEIGHT,"fontSize":14,"lineHeight":ROW,"color":"white","background":"#101010"}}}),
-            json!({"op":"place","child":1,"parent":null,"before":null}),
-            json!({"op":"create","id":2,"component":"text","props":bridge_text("Status 0".into(),HEADER)}),
-            json!({"op":"place","child":2,"parent":1,"before":null}),
-            json!({"op":"create","id":3,"component":if virtualized {"list"} else {"container"},"props":if virtualized {json!({"estimatedItemHeight":ROW,"style":{"width":WIDTH,"height":HEIGHT-HEADER,"shrink":0}})} else {json!({"scroll":"y","style":{"width":WIDTH,"height":HEIGHT-HEADER,"shrink":0}})}}),
-            json!({"op":"place","child":3,"parent":1,"before":null}),
+            json!({"op":"style","id":0,"style":{"width":WIDTH,"height":HEIGHT,"fontSize":14,"lineHeight":ROW,"color":"white","background":"#101010"}}),
+            json!({"op":"style","id":1,"style":{"width":WIDTH,"height":HEADER,"shrink":0}}),
+            json!({"op":"style","id":2,"style":{"width":WIDTH,"height":ROW,"shrink":0}}),
+            json!({"op":"style","id":3,"style":{"width":WIDTH,"height":HEIGHT-HEADER,"shrink":0}}),
+            json!({"op":"create","id":1,"component":std::env::var("BRIDGE_ROOT").unwrap_or_else(|_| "document".into()),"props":{"style":0},"parent":null}),
+            json!({"op":"create","id":2,"component":"text","props":bridge_text("Status 0".into(),1),"parent":1}),
+            json!({"op":"create","id":3,"component":if virtualized {"list"} else {"container"},"props":if virtualized {json!({"estimatedItemHeight":ROW,"style":3})} else {json!({"scroll":"y","style":3})},"parent":1}),
         ];
         for ix in 0..count {
-            ops.push(json!({"op":"create","id":ix+4,"component":"text","props":bridge_text(row_text(ix),ROW)}));
-            ops.push(json!({"op":"place","child":ix+4,"parent":3,"before":null}));
+            ops.push(json!({"op":"create","id":ix+4,"component":"text","props":bridge_text(row_text(ix),2),"parent":3}));
         }
         json!({"version":1,"sequence":1,"operations":ops}).to_string()
-    } else if mode == "legacy" {
-        let mut ops = vec![
-            json!(["createElement", 1, "div"]),
-            json!(["setRoot", 1]),
-            json!(["setStyle",1,{"display":"flex","flexDirection":"column","width":WIDTH,"height":HEIGHT,"fontSize":14,"lineHeight":ROW,"color":"white","backgroundColor":"#101010"}]),
-            json!(["createElement", 2, "text"]),
-            json!(["setText", 2, "Status 0"]),
-            json!(["setStyle",2,{"width":WIDTH,"height":HEADER,"flexShrink":0}]),
-            json!(["appendChild", 1, 2]),
-            json!([
-                "createElement",
-                3,
-                if virtualized { "virtual-list" } else { "div" }
-            ]),
-            json!(["setStyle",3,{"display":"flex","flexDirection":"column","width":WIDTH,"height":HEIGHT-HEADER,"flexShrink":0,"overflowY":"scroll"}]),
-            json!(["appendChild", 1, 3]),
-        ];
-        if virtualized {
-            ops.push(json!(["setCustomProp", 3, "estimatedItemHeight", ROW]));
-        }
-        for ix in 0..count {
-            ops.push(json!(["createElement", ix + 4, "text"]));
-            ops.push(json!(["setText", ix + 4, row_text(ix)]));
-            ops.push(json!(["setStyle",ix+4,{"width":WIDTH,"height":ROW,"flexShrink":0}]));
-            ops.push(json!(["appendChild", 3, ix + 4]));
-        }
-        Value::Array(ops).to_string()
     } else {
         String::new()
     }
 }
 enum Engine {
     Raw(Entity<Raw>),
-    Controls {
-        document: Entity<Document>,
-        header: Entity<Text>,
-    },
     Bridge {
         host: Entity<Host>,
         sequence: u64,
-    },
-    Legacy {
-        view: Entity<GpuixView>,
-        tree: Arc<Mutex<RetainedTree>>,
     },
 }
 impl Engine {
@@ -194,90 +131,53 @@ impl Engine {
                     virtualized,
                 }
             })),
-            "controls" => {
-                let header = cx.new(|_| Text::new(text_props("Status 0".into(), HEADER)));
-                let rows: Vec<AnyView> = (0..count)
-                    .map(|ix| cx.new(|_| Text::new(text_props(row_text(ix), ROW))).into())
-                    .collect();
-                let pane: AnyView = if virtualized {
-                    let pane = cx.new(|cx| {
-                        VirtualList::new(
-                            ListProps {
-                                style: box_style(HEIGHT - HEADER),
-                                estimated_item_height: Some(ROW),
-                                ..Default::default()
-                            },
-                            window,
-                            cx,
-                        )
-                    });
-                    pane.update(cx, |pane, cx| pane.set_children(rows, window, cx));
-                    pane.into()
-                } else {
-                    let pane = cx.new(|cx| {
-                        Container::new(
-                            ContainerProps {
-                                style: box_style(HEIGHT - HEADER),
-                                scroll: gpui_react_controls::container::Scroll::Y,
-                                ..Default::default()
-                            },
-                            window,
-                            cx,
-                        )
-                    });
-                    pane.update(cx, |pane, cx| pane.set_children(rows, window, cx));
-                    pane.into()
-                };
-                let document = cx.new(|cx| {
-                    Document::new(
-                        DocumentProps {
-                            style: root_style(),
-                            ..Default::default()
-                        },
-                        cx,
-                    )
-                });
-                document.update(cx, |doc, cx| {
-                    doc.set_children(vec![header.clone().into(), pane], window, cx)
-                });
-                Self::Controls { document, header }
-            }
             "bridge" => {
                 let mut registry = Registry::default();
                 gpui_react_controls::register(&mut registry).unwrap();
                 let host = cx.new(|_| Host::new(registry, Arc::new(|_| {})));
-                let tx = serde_json::from_str(source).unwrap();
-                host.update(cx, |host, cx| host.apply(tx, window, cx))
+                let started = Instant::now();
+                let floor = if std::env::var_os("BRIDGE_MOUNT_PHASES").is_some() {
+                    let _: serde::de::IgnoredAny = serde_json::from_str(source).unwrap();
+                    Some(started.elapsed())
+                } else {
+                    None
+                };
+                let started = Instant::now();
+                let prepared = host.update(cx, |host, _| host.decode(source)).unwrap();
+                let decoded = started.elapsed();
+                host.update(cx, |host, cx| host.apply_prepared(prepared, window, cx))
                     .unwrap();
+                let applied = started.elapsed();
+                if let Some(floor) = floor {
+                    eprintln!(
+                        "mount phases: json tokenize floor {:.0} us, decode {:.0} us, apply {:.0} us",
+                        floor.as_secs_f64() * 1e6,
+                        decoded.as_secs_f64() * 1e6,
+                        (applied - decoded).as_secs_f64() * 1e6
+                    );
+                }
                 Self::Bridge { host, sequence: 1 }
             }
-            "legacy" => {
-                let tree = Arc::new(Mutex::new(RetainedTree::new()));
-                apply_batch_to_tree(&mut tree.lock().unwrap(), source.as_bytes()).unwrap();
-                Self::Legacy {
-                    view: cx.new(|_| GpuixView::for_benchmark(tree.clone())),
-                    tree,
-                }
-            }
-            _ => panic!("mode must be raw, controls, bridge, or legacy"),
+            _ => panic!("mode must be raw or bridge"),
         }
     }
     fn view(&self) -> AnyView {
         match self {
             Self::Raw(v) => v.clone().into(),
-            Self::Controls { document, .. } => document.clone().into(),
             Self::Bridge { host, .. } => host.clone().into(),
-            Self::Legacy { view, .. } => view.clone().into(),
         }
     }
     fn update_wire(&mut self, text: &str) -> String {
-        match self {
-            Self::Bridge { sequence, .. } => {
-                *sequence += 1;
-                json!({"version":1,"sequence":sequence,"operations":[{"op":"props","id":2,"props":bridge_text(text.into(),HEADER)}]}).to_string()
+        if let Self::Bridge { sequence, .. } = self {
+            *sequence += 1;
+            if std::env::var_os("BRIDGE_SKIP_UPDATE").is_some() {
+                // Probe: an empty transaction leaves the tree clean, so the
+                // following draw re-renders nothing.
+                return json!({"version":1,"sequence":sequence,"operations":[]}).to_string();
             }
-            Self::Legacy { .. } => json!([["setText", 2, text]]).to_string(),
-            _ => text.to_owned(),
+            json!({"version":1,"sequence":sequence,"operations":[{"op":"props","id":2,"component":"text","props":bridge_text(text.into(),1)}]}).to_string()
+        } else {
+            text.to_owned()
         }
     }
     fn update(&mut self, source: &str, window: &mut Window, cx: &mut App) {
@@ -286,47 +186,34 @@ impl Engine {
                 view.header = source.to_owned().into();
                 cx.notify();
             }),
-            Self::Controls { header, .. } => header.update(cx, |header, cx| {
-                header.set_props(text_props(source.into(), HEADER), window, cx)
-            }),
             Self::Bridge { host, .. } => {
                 // Decode occurs on the worker in production; this reports combined native CPU work.
-                let tx: Transaction = serde_json::from_str(source).unwrap();
+                let tx = Transaction::parse(source).unwrap();
                 host.update(cx, |host, cx| host.apply(tx, window, cx))
                     .unwrap();
-            }
-            Self::Legacy { view, tree } => {
-                apply_batch_to_tree(&mut tree.lock().unwrap(), source.as_bytes()).unwrap();
-                view.update(cx, |_, cx| cx.notify());
             }
         }
     }
     fn removal_wire(&mut self) -> String {
-        match self {
-            Self::Bridge { sequence, .. } => {
-                *sequence += 1;
-                json!({"version":1,"sequence":sequence,"operations":[{"op":"remove","id":1}]})
-                    .to_string()
-            }
-            Self::Legacy { .. } => "[[\"destroyElement\",1]]".into(),
-            _ => String::new(),
+        if let Self::Bridge { sequence, .. } = self {
+            *sequence += 1;
+            json!({"version":1,"sequence":sequence,"operations":[{"op":"remove","id":1}]})
+                .to_string()
+        } else {
+            String::new()
         }
     }
     fn remove(&mut self, source: &str, window: &mut Window, cx: &mut App) {
-        match self {
-            Self::Bridge { host, .. } => {
-                let transaction = serde_json::from_str(source).unwrap();
-                host.update(cx, |host, cx| {
-                    host.apply(transaction, window, cx).unwrap();
-                    assert!(host.is_empty());
-                });
+        if let Self::Bridge { host, .. } = self {
+            let transaction = Transaction::parse(source).unwrap();
+            let started = Instant::now();
+            host.update(cx, |host, cx| {
+                host.apply(transaction, window, cx).unwrap();
+                assert!(host.is_empty());
+            });
+            if std::env::var_os("BRIDGE_MOUNT_PHASES").is_some() {
+                eprintln!("remove transaction: {:.0} us", started.elapsed().as_secs_f64() * 1e6);
             }
-            Self::Legacy { tree, .. } => {
-                let mut tree = tree.lock().unwrap();
-                apply_batch_to_tree(&mut tree, source.as_bytes()).unwrap();
-                assert!(tree.elements.is_empty());
-            }
-            _ => {}
         }
     }
 }
@@ -443,8 +330,16 @@ fn main() {
     });
     assert_eq!(scene.draws.get(), draws_before_mount, "mount must not draw");
     let after_mount = mark();
+    if std::env::var_os("PROBE_MOUNT_HISTOGRAM").is_some() {
+        let empty = vec![0i64; allocation::histogram().len().max(1)];
+        eprintln!("live allocations after mount by size: {:?}", allocation::growth(&empty, &allocation::histogram()));
+    }
     let (_, first_draw) = measure(|| scene.draw());
     let after_first_draw = mark();
+    let histogram_after_first_draw = allocation::histogram();
+    if let Some(size) = std::env::var("PROBE_TRACK_SIZE").ok().and_then(|s| s.parse().ok()) {
+        allocation::track_size(size);
+    }
     #[cfg(feature = "scene-checks")]
     if let Some(dir) = std::env::var_os("FRAME_BENCH_IMAGES").filter(|path| !path.is_empty()) {
         std::fs::create_dir_all(&dir).unwrap();
@@ -466,7 +361,12 @@ fn main() {
             )))
             .unwrap();
     }
+    let mut live_after_draw = Vec::new();
     for i in 0..110 {
+        allocation::PHASE.store(i + 1, std::sync::atomic::Ordering::Relaxed);
+        if i < 6 {
+            live_after_draw.push(mark().live - baseline.live);
+        }
         let text = if i % 2 == 0 { "Status 1" } else { "Status 0" };
         let update = engine.update_wire(text);
         let draws_before_update = scene.draws.get();
@@ -483,6 +383,15 @@ fn main() {
             frames.push(frame);
         }
     }
+    let after_text_updates = mark();
+    let growth = allocation::growth(&histogram_after_first_draw, &allocation::histogram());
+    for (count, trace) in allocation::tracked_live().into_iter().take(1) {
+        eprintln!("=== {count} live tracked allocations from:\n{trace}\n");
+    }
+    for trace in allocation::late_frees() {
+        eprintln!("=== late free:\n{trace}\n");
+    }
+    allocation::track_size(0);
     for i in 0..110 {
         let (_, sample) = measure(|| {
             scene.with_window(|window, cx| {
@@ -510,20 +419,43 @@ fn main() {
         }
     }
     let after_updates = mark();
+    let histogram_after_updates = allocation::histogram();
     let remove = engine.removal_wire();
+    let phases = std::env::var_os("BRIDGE_MOUNT_PHASES").is_some();
     let (_, clear) = measure(|| {
+        let t = Instant::now();
         scene.update(|root, window, cx| {
             engine.remove(&remove, window, cx);
             root.child = None;
             cx.notify();
         });
-        drop(engine);
+        let removed = t.elapsed();
+        if std::env::var_os("PROBE_LEAK_ENGINE").is_some() {
+            std::mem::forget(engine);
+        } else {
+            drop(engine);
+        }
+        let dropped = t.elapsed();
         scene.draw();
+        if phases {
+            eprintln!(
+                "clear phases: remove {:.0} us, drop engine {:.0} us, empty draw {:.0} us",
+                removed.as_secs_f64() * 1e6,
+                (dropped - removed).as_secs_f64() * 1e6,
+                (t.elapsed() - dropped).as_secs_f64() * 1e6
+            );
+        }
     });
     let after_clear = mark();
+    if std::env::var_os("PROBE_CLEAR_HISTOGRAM").is_some() {
+        eprintln!(
+            "freed by clear, by size: {:?}",
+            allocation::growth(&histogram_after_updates, &allocation::histogram())
+        );
+    }
     let viewport=scene.with_window(|window,_|json!({"width":f32::from(window.viewport_size().width),"height":f32::from(window.viewport_size().height),"scale":window.scale_factor()}));
     println!(
         "{}",
-        json!({"mode":mode,"scene":if virtualized{"list"}else{"flow"},"rows":count,"allocationCounts":cfg!(feature="allocation-counts"),"wireBytes":source.len(),"viewport":viewport,"mount":mount,"firstDraw":first_draw,"nativeUpdate":summary(&apply),"updatedDraw":summary(&frames),"wheelAndDraw":summary(&scroll),"clearAndDraw":clear,"rustLiveBytesAboveEmpty":{"afterMount":after_mount.live-baseline.live,"afterFirstDraw":after_first_draw.live-baseline.live,"afterUpdates":after_updates.live-baseline.live,"afterClear":after_clear.live-baseline.live}})
+        json!({"mode":mode,"scene":if virtualized{"list"}else{"flow"},"rows":count,"allocationCounts":cfg!(feature="allocation-counts"),"wireBytes":source.len(),"viewport":viewport,"mount":mount,"firstDraw":first_draw,"nativeUpdate":summary(&apply),"updatedDraw":summary(&frames),"wheelAndDraw":summary(&scroll),"clearAndDraw":clear,"liveGrowthBySize":growth,"liveBeforeUpdateDraws":live_after_draw,"rustLiveBytesAboveEmpty":{"afterMount":after_mount.live-baseline.live,"afterFirstDraw":after_first_draw.live-baseline.live,"afterTextUpdates":after_text_updates.live-baseline.live,"afterUpdates":after_updates.live-baseline.live,"afterClear":after_clear.live-baseline.live}})
     );
 }

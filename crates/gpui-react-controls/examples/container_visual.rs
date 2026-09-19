@@ -6,7 +6,7 @@ use support::*;
 fn main() {
     let mut h = Harness::new(400., 300.);
     h.apply(json!([
-        create(1,"container",json!({"focusable":true,"style":{"width":120,"height":100,"padding":10,"borderWidth":2,"borderColor":"red","background":"#202020"}})),place(1,None,None),
+        create(1,"container",json!({"focusable":true,"measure":true,"style":{"width":120,"height":100,"padding":10,"borderWidth":2,"borderColor":"red","background":"#202020"}})),place(1,None,None),
         {"op":"listen","id":1,"subscription":1},
         row(2,0),place(2,Some(1),None)
     ]));
@@ -42,7 +42,7 @@ fn main() {
     let mut query = h.command_op(2, json!(null));
     query["op"] = json!("query");
     let reply=h.apply(json!([
-        {"op":"props","id":1,"props":{"focusable":true,"style":{"width":120,"height":100,"padding":20,"borderWidth":2,"borderColor":"red"}}},
+        {"op":"props","id":1,"component":"container","props":{"focusable":true,"style":{"width":120,"height":100,"padding":20,"borderWidth":2,"borderColor":"red"}}},
         query
     ]));
     let unpainted = reply.results[0].value.as_ref().unwrap();
@@ -119,11 +119,11 @@ fn main() {
     h.apply(json!([
         create(9,"container",json!({"style":{"width":200,"height":180}})),place(9,None,None),
         create(10,"container",json!({"scroll":"x","scrollGroup":"table","style":{"width":200,"height":30,"shrink":0}})),place(10,Some(9),None),
-        create(11,"container",json!({"style":{"width":800,"height":20,"shrink":0}})),place(11,Some(10),None),
+        create(11,"container",json!({"measure":true,"style":{"width":800,"height":20,"shrink":0}})),place(11,Some(10),None),
         create(12,"container",json!({"scroll":"x","scrollGroup":"table","style":{"width":200,"height":100,"shrink":0}})),place(12,Some(9),None),
-        create(13,"container",json!({"style":{"width":800,"height":80,"shrink":0}})),place(13,Some(12),None),
+        create(13,"container",json!({"measure":true,"style":{"width":800,"height":80,"shrink":0}})),place(13,Some(12),None),
         create(14,"container",json!({"scroll":"x","scrollGroup":"other","style":{"width":200,"height":30,"shrink":0}})),place(14,Some(9),None),
-        create(15,"container",json!({"style":{"width":800,"height":20,"shrink":0}})),place(15,Some(14),None)
+        create(15,"container",json!({"measure":true,"style":{"width":800,"height":20,"shrink":0}})),place(15,Some(14),None)
     ]));
     h.draw();
     for _ in 0..72 {
@@ -137,7 +137,7 @@ fn main() {
         assert_eq!(h.query(15)["painted"]["bounds"]["x"], 0.);
     }
     assert_eq!(h.query(10)["offset"]["x"], 234.);
-    h.apply(json!([{"op":"props","id":10,"props":{"scroll":"x","style":{"width":200,"height":30,"shrink":0}}}]));
+    h.apply(json!([{"op":"props","id":10,"component":"container","props":{"scroll":"x","style":{"width":200,"height":30,"shrink":0}}}]));
     h.draw();
     assert_eq!(h.query(10)["offset"]["x"], 0.);
     assert_eq!(h.query(12)["offset"]["x"], 234.);
@@ -167,7 +167,7 @@ fn main() {
         h.take_events().iter().any(|e| e["type"] == "click"),
         "a layout container must not swallow its parent's click"
     );
-    h.apply(json!([{"op":"props","id":17,"props":{"blockMouse":true,"style":{"width":150,"height":40}}}]));
+    h.apply(json!([{"op":"props","id":17,"component":"container","props":{"blockMouse":true,"style":{"width":150,"height":40}}}]));
     h.draw();
     h.take_events();
     h.cx.simulate_click(

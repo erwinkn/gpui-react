@@ -3,7 +3,7 @@ use gpui_react::{
     gpui::{prelude::*, *},
     *,
 };
-use gpui_react_controls::{Style, document_text, geometry::Rect};
+use gpui_react_controls::{SharedStyle, document_text, geometry::Rect};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     sync::Arc,
@@ -24,7 +24,7 @@ fn color<'de, D: Deserializer<'de>>(d: D) -> Result<[f64; 4], D::Error> {
 #[derive(Default, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextureProps {
-    pub style: Style,
+    pub style: SharedStyle,
     #[serde(deserialize_with = "color")]
     pub initial_color: [f64; 4],
     pub radius: f32,
@@ -93,7 +93,7 @@ struct Texture {
 }
 
 pub struct TextureView {
-    style: Style,
+    style: SharedStyle,
     radius: f32,
     label: SharedString,
     label_key: SharedString,

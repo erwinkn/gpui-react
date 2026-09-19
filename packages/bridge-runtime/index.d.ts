@@ -1,4 +1,4 @@
-import type { Bindings } from "@gpuix/bridge/application"
+import type { Bindings } from "@gpui-react/core/application"
 
 export declare const bridgeRuntimeVersion: Bindings["bridgeRuntimeVersion"]
 export declare const NativeHost: Bindings["NativeHost"]

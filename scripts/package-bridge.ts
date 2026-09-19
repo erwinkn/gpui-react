@@ -20,8 +20,8 @@ const binding = createRequire(import.meta.url)(join(root, "packages/bridge-runti
 if (binding.bridgeRuntimeVersion() !== 1) throw Error("Unexpected native protocol")
 const exports = Object.keys(binding).sort()
 if (exports.join(",") !== "NativeClient,NativeHost,bridgeRuntimeVersion") throw Error(`Unexpected native exports: ${exports}`)
-const base = `https://github.com/erwinkn/gpuix/releases/download/bridge-v${version}`
-const stage = mkdtempSync(join(tmpdir(), "gpuix-bridge-pack-"))
+const base = `https://github.com/erwinkn/gpui-react/releases/download/bridge-v${version}`
+const stage = mkdtempSync(join(tmpdir(), "gpui-react-pack-"))
 const sha256 = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex")
 mkdirSync(output, { recursive: true })
 try {
@@ -34,8 +34,8 @@ try {
     for (const file of manifest.files) cpSync(join(source, file), join(destination, file), { recursive: true })
     manifest.version = version
     manifest.private = true
-    manifest.repository = { type: "git", url: "https://github.com/erwinkn/gpuix" }
-    if (manifest.peerDependencies?.["@gpuix/bridge"]) manifest.peerDependencies["@gpuix/bridge"] = version
+    manifest.repository = { type: "git", url: "https://github.com/erwinkn/gpui-react" }
+    if (manifest.peerDependencies?.["@gpui-react/core"]) manifest.peerDependencies["@gpui-react/core"] = version
     delete manifest.devDependencies
     delete manifest.scripts
     writeFileSync(join(destination, "package.json"), JSON.stringify(manifest, null, 2) + "\n")

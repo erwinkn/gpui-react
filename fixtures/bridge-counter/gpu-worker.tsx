@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import { createRef } from "react"
-import { attachApplication } from "@gpuix/bridge/application"
-import { Document, type DocumentRef } from "@gpuix/bridge-controls"
-import { Texture, type TextureRef } from "@gpuix/bridge-gpu-example"
+import { attachApplication } from "@gpui-react/core/application"
+import { Document, type DocumentRef } from "@gpui-react/controls"
+import { Texture, type TextureRef } from "@gpui-react/gpu-example"
 
 const bindings = require("./counter.node")
 const root = attachApplication(bindings)

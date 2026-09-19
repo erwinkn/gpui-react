@@ -702,3 +702,99 @@ samples retained, not the final repeated comparison. The allocation build
 shows bridge memory before drawing fall from 5.975 MiB to 5.760 MiB. The
 remaining gap is still material. Offscreen input, container, list, and document
 GPU examples pass, including IME, scroll groups, anchoring, and drag selection.
+
+### One host tree instead of one entity per node
+
+The frame and heap comparison showed the entity-per-node model costing about
+twice the raw handwritten GPUI draw time in the flow scene and about double the
+old renderer's retained memory. The cause was structural: every div and text
+node was a GPUI entity with its own focus handle, scroll handle, subscription,
+paint write-back, and a duplicated child list in the host index.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Keep the committed React tree as plain nodes inside one `Host` entity and rebuild GPUI elements from it each frame. Entities exist only for components registered as views. | One GPUI entity per React node, with the host as an index of entity handles. | High | The host renders its whole arena every draw. Large content is bounded by virtualization, not by view caching, which the earlier review found bypassed on refresh. |
+| Add `ReactElement` for host-owned nodes; keep `ReactView` for entities; give views a lazy `Children` handle that renders children from the host tree on demand. | Keep `Vec<AnyView>` children, which requires every child to be an entity. | High | A view must not render children while the host is being updated. GPUI renders views during layout, after the host's render returns, so ordinary use is safe. |
+| Allocate focus and scroll handles only when props ask for them; let GPUI element state keyed by the node id keep hover, active, and scroll state. | Allocate both on every container. | High | A container that gains `focusable` or `scroll` later creates its handle at that prop change. |
+| Make painted-geometry recording opt-in through a `measure` prop on container and text. | Write bounds into every node on every frame. | High | Queries return null geometry for nodes without `measure`. Fixtures that read bounds set the prop. |
+| Replace the ancestor change-set protocol with a walk to the nearest enclosing view that owns children, done inline while applying an operation. | Keep `children_changed` with per-transaction maps of changed sets. | High | Elements are walked through; only views cache child geometry. |
+| Decode props, commands, and queries to typed data on the worker; every such operation names its component. Remove the transaction-local validation overlay. | Decode on the UI thread and validate whole transactions before applying them. | High | A failed transaction leaves the tree partially updated and ends the session. The reconciler does not produce invalid transactions; schema errors are found on the worker before admission. |
+| Share equal styles per app through a content-hashed table swept when it doubles; compare props structurally in the reconciler so unchanged inline styles are not resent. | Intern styles in a global weak pool; compare props by identity. | High | The table holds strong references between sweeps. Structural comparison costs a walk over changed props on the worker. |
+| Remove per-row focus handles from the virtual list. | Keep one focus handle per supplied row for GPUI list focus tracking. | Medium | A focusable row must own a focusable container. Focus-driven scroll-into-view for rows is no longer automatic. |
+| Retire the direct-controls benchmark mode and the manual `list_cost` test. | Keep a direct construction path for host-owned nodes. | High | Container and text only exist through the host now; the raw handwritten mode remains the lower bound. |
+
+All 12 core tests, 46 controls tests, 14 reconciler tests, the nine offscreen
+GPU example scenarios, the external GPU component example, and the native
+counter fixture suite (source, sequential sessions, failure cleanup, relocated
+executable) pass on the new model.
+
+Measured after the change, medians of three repeats at 5,000 rows
+([full report](../../docs/bridge-frame-cost.md)):
+
+| Scene | Mode | Draw p50 | Rust heap after mount |
+| --- | --- | ---: | ---: |
+| list | raw | 0.23 ms | 964 KiB |
+| list | bridge | 0.31 ms | 2,383 KiB |
+| list | legacy | 0.40 ms | 2,437 KiB |
+| flow | raw | 9.9 ms | 964 KiB |
+| flow | bridge | 15.3 ms | 1,847 KiB |
+| flow | legacy | 63.1 ms | 2,437 KiB |
+
+Before the change the bridge held 5,012 KiB after mount in the list scene and
+drew the flow scene in about twice the raw time. Bridge mount remains slower
+than the old renderer in this fixture because it decodes JSON to a value tree
+and then to typed props on one thread; in the deployed host that decode runs on
+the worker. The flow scene's per-draw heap growth is shared with the old
+renderer, is independent of the bridge tree, and remains an open GPUI-side
+item for a heap profiler.
+
+### Decode path and the retained frame in the layout engine
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Parse transactions with props, command values, and query values as raw JSON slices, and decode each slice straight into typed data. | Parse to `serde_json::Value` first, then convert. | High | A hand-written `Operation` deserializer replaces the derived one, because raw slices cannot pass through serde's internally tagged enum buffering. Tests build transactions from JSON text. |
+| Drop each frame's measure closures in `TaffyLayoutEngine::clear` by tracking the measured nodes. | Leave `TaffyTree::clear` as is. | High | `TaffyTree::clear` removes nodes but not node contexts. Every measured element's closure, with its captured text layout, shaping data, and text style, survived until the next frame overwrote its slot: about 3.5 KB per text element for a whole frame. This affects every GPUI window, not only the bridge, and is a candidate for upstream. |
+| Render containers without scroll, focus, listeners, interactive styles, a label, or measurement as plain divs. | Give every container a GPUI element id. | High | A container that gains one of those props later switches to the identified path; GPUI element state starts fresh at that point. |
+
+The retained frame was located with the fixture's allocation histogram and
+per-size backtrace tracking rather than a source probe: the growth was 5,001
+objects of five sizes appearing once, allocated in the last draw, and freed by
+`SparseSecondaryMap::insert` in the following draw.
+
+Measured after these changes at 5,000 rows, medians of three repeats
+([full report](../../docs/bridge-frame-cost.md)):
+
+| Scene | Mode | Mount | Draw p50 | Rust heap after mount | Rust heap after first draw |
+| --- | --- | ---: | ---: | ---: | ---: |
+| list | raw | 0.54 ms | 0.25 ms | 964 KiB | 1,759 KiB |
+| list | bridge | 4.61 ms | 0.32 ms | 2,383 KiB | 3,343 KiB |
+| list | legacy | 2.20 ms | 0.44 ms | 2,437 KiB | 4,694 KiB |
+| flow | raw | 0.54 ms | 12.3 ms | 964 KiB | 40,994 KiB |
+| flow | bridge | 4.85 ms | 15.3 ms | 1,847 KiB | 47,941 KiB |
+| flow | legacy | 2.35 ms | 75.3 ms | 2,437 KiB | 118,145 KiB |
+
+Bridge mount fell from 6.6 ms and 95,000 allocations to 4.6 ms and 45,000
+allocations. The remaining allocations per node are the component name and
+raw slice copies of each operation, the typed props, the node, and its
+instance. Borrowing the operation fields from the transaction text would
+remove two of those per operation and is the next step if mount matters.
+
+### Worker measurement, single-pass decode, style ids, dense ids, flat tables
+
+Following the data-structure review with the user, the bridge was reworked in
+the agreed order with a benchmark before and after each step.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Measure the worker before the native side. | Optimize native mount further first. | High | At 5,000 rows the worker spent 10.2 ms in React and 4.3 ms sealing against 4.6 ms native. The validating `JSON.stringify` replacer was seven times the cost of serialization; props are now validated once when recorded. |
+| Borrow props slices and decode them with static serde in the structural pass. | A true single pass through `erased-serde`. | High | Type erasure measured 3.1 ms against 2.5 ms: it boxes intermediate values per token. |
+| Define styles once on the wire by id; the worker-side decoder owns the definitions. | Intern styles on the UI thread. | High | `SharedStyle` props arrive resolved; style operations never reach the UI. The worker pays about 0.9 ms per 5,000 unmemoized rows to key styles; memoized rows hit an identity map. |
+| Reuse host ids after acknowledgement and store nodes in a vector. | Keep monotonic ids and a hash map. | High | React reports every deleted instance, so the reconciler frees ids exactly. Subscription ids stay unique, and a generation counter on the record keeps old listeners from a reused id. |
+| Nodes as 36-byte integer records with sibling links; one typed row table per kind; packed `Text` and `Container` rows; capacities reserved from the transaction. | Per-node boxes and child vectors. | High | Placement and removal are O(1) by anchor. Rust heap after mount at 5,000 rows equals the raw view in the flow scene. |
+| Lazy document geometry over GPUI's shared line layouts; integer keys for auto-keyed text with an Fx hash. | Materialize row rectangles per text per frame; string keys. | High | Rows are derived only for a selection, a search wash, or a hit test. |
+
+Native mount at 5,000 rows: 4.6 ms → 2.2 ms (decode 1.5 ms, apply 0.6 ms).
+Worker mount: 10.2 + 4.3 ms → 7.8 + 1.25 ms. Rust heap after mount, flow
+scene: 1,847 → 963 KiB against 964 KiB raw. All crate tests, the nine
+offscreen examples, the GPU component example, and the native counter suite
+pass at each step.

@@ -12,15 +12,15 @@ const published = process.argv.includes("--published")
 const manifest = JSON.parse(readFileSync(join(artifacts, "bridge-manifest.json"), "utf8"))
 if (published) assert.equal(manifest.sourceDirty, false, "Published artifacts must use committed source")
 const hash = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex")
-assert.deepEqual(manifest.packages.map((item: { name: string }) => item.name).sort(), ["@gpuix/bridge", "@gpuix/bridge-controls", "@gpuix/bridge-runtime"])
+assert.deepEqual(manifest.packages.map((item: { name: string }) => item.name).sort(), ["@gpui-react/controls", "@gpui-react/core", "@gpui-react/runtime"])
 for (const item of manifest.packages) assert.equal(hash(join(artifacts, item.filename)), item.sha256)
 
-const temporary = mkdtempSync(join(tmpdir(), "gpuix-bridge-install-"))
+const temporary = mkdtempSync(join(tmpdir(), "gpui-react-install-"))
 const directory = join(temporary, "application")
 mkdirSync(directory)
 async function run(command: string, args: string[], cwd = directory, mode = "", timeout = 30_000): Promise<string> {
   return new Promise((resolveResult, reject) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, GPUIX_BACKGROUND: "1", BRIDGE_PACKAGE_MODE: mode }, stdio: ["ignore", "pipe", "pipe"] })
+    const child = spawn(command, args, { cwd, env: { ...process.env, BRIDGE_PACKAGE_MODE: mode }, stdio: ["ignore", "pipe", "pipe"] })
     let output = ""
     child.stdout.on("data", chunk => { output += chunk })
     child.stderr.on("data", chunk => { output += chunk })
@@ -43,17 +43,14 @@ try {
     const integrity = "sha512-" + createHash("sha512").update(readFileSync(join(artifacts, item.filename))).digest("base64")
     assert.equal(lock.packages[`node_modules/${item.name}`].integrity, integrity, "Installed archive differs from the checked artifact")
   }
-  assert.equal(hash(join(directory, "node_modules/@gpuix/bridge-runtime/gpui-react-runtime.darwin-arm64.node")), manifest.native.sha256)
-  for (const key of Object.keys(lock.packages)) {
-    assert.ok(!/node_modules\/@gpuix\/(native|react)(\/|$)/.test(key), `Legacy renderer in new runtime: ${key}`)
-  }
+  assert.equal(hash(join(directory, "node_modules/@gpui-react/runtime/gpui-react-runtime.darwin-arm64.node")), manifest.native.sha256)
   console.log(`PASS isolated ${published ? "published" : "local"} archive installation and hashes`)
 
   const loader = `
     import assert from 'node:assert/strict';
     import {createRequire} from 'node:module';
-    import bindings, {NativeHost, NativeClient, bridgeRuntimeVersion} from '@gpuix/bridge-runtime';
-    const commonjs=createRequire(import.meta.url)('@gpuix/bridge-runtime');
+    import bindings, {NativeHost, NativeClient, bridgeRuntimeVersion} from '@gpui-react/runtime';
+    const commonjs=createRequire(import.meta.url)('@gpui-react/runtime');
     assert.equal(commonjs,bindings);
     assert.equal(NativeHost,bindings.NativeHost);
     assert.equal(NativeClient,bindings.NativeClient);
@@ -64,7 +61,7 @@ try {
   writeFileSync(join(directory, "loader.mjs"), loader)
   for (const runtime of ["node", "bun"]) assert.match(await run(runtime, ["loader.mjs"]), /loader passed/)
   console.log("PASS Node/Bun ESM and CommonJS loader identity")
-  const runtime = join(directory, "node_modules/@gpuix/bridge-runtime")
+  const runtime = join(directory, "node_modules/@gpui-react/runtime")
   // Run the real guard with a substituted platform, without attempting to load a binary.
   writeFileSync(join(directory, "unsupported.cjs"), `
     const vm=require('node:vm'), fs=require('node:fs'), assert=require('node:assert/strict');
@@ -74,7 +71,7 @@ try {
     }
   `)
   await run("node", ["unsupported.cjs"])
-  writeFileSync(join(directory, "browser-entry.js"), `import bindings from '@gpuix/bridge-runtime'; console.log(bindings.bridgeRuntimeVersion())`)
+  writeFileSync(join(directory, "browser-entry.js"), `import bindings from '@gpui-react/runtime'; console.log(bindings.bridgeRuntimeVersion())`)
   await run("bun", ["build", "browser-entry.js", "--target=browser", "--outfile", "browser-bundle.js"])
   const browser = readFileSync(join(directory, "browser-bundle.js"), "utf8")
   assert.ok(!browser.includes(".node"), "Browser resolution pulled in the native loader")

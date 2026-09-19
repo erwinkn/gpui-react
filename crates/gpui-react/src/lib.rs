@@ -1,28 +1,37 @@
-//! React bindings for ordinary GPUI views.
+//! React bindings for GPUI.
 //!
-//! A component remains a GPUI `Render` implementation. This crate owns the
-//! boundary: typed props, optional capabilities, identity, and subscriptions.
-//! No JavaScript runtime or worker-side native description tree is required.
+//! One `Host` entity per window root owns the committed React tree as plain
+//! data and rebuilds ephemeral GPUI elements from it every frame. Nodes with
+//! native state (inputs, lists, custom components) are ordinary GPUI entities
+//! listed in that tree. No JavaScript runtime or second native tree exists.
 
-mod binding;
+mod decode;
 mod frame;
 mod host;
-pub use frame::{FrameInfo, current_frame};
 pub mod protocol;
+mod registry;
+pub mod style;
 
-pub use binding::{Component, Emission, EventSink, MountOptions, MountedView, Prepared, Registry};
+pub use decode::Decoder;
+pub use frame::{FrameInfo, current_frame};
 pub use gpui;
-use gpui::{AnyView, Context, EntityId, EventEmitter, Render, Window};
-pub use host::Host;
+pub use host::{Children, ElementContext, Host, RenderContext};
+pub use registry::{
+    Capabilities, Component, Emission, Emitter, EventSink, HostElement, Prepared, Registry,
+};
+pub use style::{Color, Length, SharedStyle, Style};
+
+use gpui::{AnyElement, Context, EventEmitter, Render, Window};
 use serde::{Serialize, de::DeserializeOwned};
 
-/// The minimum interface needed to mount a GPUI view from React.
+/// A React component backed by a GPUI entity. Use this for anything with native
+/// state: editors, lists, animations, GPU resources, or code that needs layout.
 ///
 /// `set_props` receives a complete validated prop value, including defaults and
 /// removals. Preserve native interaction state unless the props explicitly
 /// request a replacement. Call `cx.notify()` when the update changes rendering.
 pub trait ReactView: Render {
-    type Props: DeserializeOwned + 'static;
+    type Props: DeserializeOwned + Send + 'static;
 
     fn create(props: Self::Props, window: &mut Window, cx: &mut Context<Self>) -> Self;
     fn set_props(&mut self, props: Self::Props, window: &mut Window, cx: &mut Context<Self>);
@@ -41,7 +50,7 @@ pub trait ReactEvents: ReactView + EventEmitter<Self::Event> {
 }
 
 pub trait ReactCommands: ReactView {
-    type Command: DeserializeOwned + 'static;
+    type Command: DeserializeOwned + Send + 'static;
     fn command(
         &mut self,
         command: Self::Command,
@@ -54,7 +63,7 @@ pub trait ReactCommands: ReactView {
 /// implicitly perform layout. Painted measurements should include `current_frame`
 /// metadata recorded during paint.
 pub trait ReactQueries: ReactView {
-    type Query: DeserializeOwned + 'static;
+    type Query: DeserializeOwned + Send + 'static;
     type Reply: Serialize;
     fn query(
         &mut self,
@@ -64,22 +73,37 @@ pub trait ReactQueries: ReactView {
     ) -> anyhow::Result<Self::Reply>;
 }
 
-/// Receive ordinary native child views. Child handles do not contain copies of
-/// their state. Components keep and render them using normal GPUI composition.
+/// Receive React children. The handle renders children on demand from the host
+/// tree, so a list can build only its visible rows. It is delivered at mount
+/// and again whenever the ordered list of visible children changes.
 pub trait ReactChildren: ReactView {
-    fn set_children(&mut self, children: Vec<AnyView>, window: &mut Window, cx: &mut Context<Self>);
+    fn set_children(&mut self, children: Children, window: &mut Window, cx: &mut Context<Self>);
 
-    /// A committed prop, invoked command, or descendant-structure update can change a
-    /// child's intrinsic size. Called once per affected direct child before the
-    /// next command/query or transaction end. Containers with native caches can
-    /// invalidate those entries; ordinary containers need no extra work.
-    /// A command can change state before returning an error, so it also counts.
-    /// Native changes outside bridge transactions still use GPUI's own APIs.
-    fn children_changed(
-        &mut self,
-        _children: &[EntityId],
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-    }
+    /// A committed prop change or command touched a node inside the given
+    /// direct child. Containers that cache row geometry can invalidate it.
+    fn child_changed(&mut self, _child: u32, _window: &mut Window, _cx: &mut Context<Self>) {}
+}
+
+/// A React component that is plain data owned by the host. It has no entity and
+/// no persistent GPUI element; the host renders it into elements each frame.
+/// Interaction state that GPUI keeps by element id (hover, scroll offsets)
+/// persists because `RenderContext::element_id` is stable for the node.
+pub trait ReactElement: 'static {
+    type Props: DeserializeOwned + Send + 'static;
+
+    fn create(props: Self::Props, cx: &mut ElementContext) -> Self;
+    fn set_props(&mut self, props: Self::Props, cx: &mut ElementContext);
+    fn render(&self, cx: &mut RenderContext) -> AnyElement;
+    fn unmount(&mut self, _cx: &mut ElementContext) {}
+}
+
+pub trait ElementCommands: ReactElement {
+    type Command: DeserializeOwned + Send + 'static;
+    fn command(&mut self, command: Self::Command, cx: &mut ElementContext) -> anyhow::Result<()>;
+}
+
+pub trait ElementQueries: ReactElement {
+    type Query: DeserializeOwned + Send + 'static;
+    type Reply: Serialize;
+    fn query(&mut self, query: Self::Query, cx: &mut ElementContext) -> anyhow::Result<Self::Reply>;
 }
