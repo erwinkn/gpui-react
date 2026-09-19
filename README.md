@@ -28,6 +28,12 @@ application worker. The host is a Rust library; only the application composition
 emits the native `.node` binary. The [counter fixture](./fixtures/bridge-counter/README.md)
 tests props, events, commands, queries, worker stalls, repeated startup, startup
 failure, invalid commits, and a relocated compiled executable. The
+same fixture has an [interactive example](./fixtures/bridge-counter/demo-host.ts).
+After building its release composition, run
+`bun fixtures/bridge-counter/demo-host.ts`. Its five-second JavaScript pause
+lets you compare the stopped React heartbeat with native input, list scrolling,
+and a Rust counter. The window opens inactive and stays open until you close it.
+The
 [standard controls](./crates/gpui-react-controls/README.md) now include an ordinary
 GPUI input, container, text leaf, variable-height list, and document text services, with
 [typed React wrappers and their API contract](./packages/bridge-controls/README.md).

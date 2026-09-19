@@ -12,6 +12,8 @@ mod interaction;
 #[cfg(feature = "interaction-tests")]
 pub use interaction::{begin_worker_stall, finish_worker_stall, native_probe_done};
 #[cfg(feature = "interaction-tests")]
+mod demo_capture;
+#[cfg(feature = "interaction-tests")]
 mod lifecycle;
 
 #[derive(Deserialize)]
@@ -136,6 +138,8 @@ fn register() {
         interaction::register(registry)?;
         #[cfg(feature = "interaction-tests")]
         lifecycle::register(registry)?;
+        #[cfg(feature = "interaction-tests")]
+        demo_capture::register(registry)?;
         registry.register(
             Component::<Counter>::new("counter")
                 .events()

@@ -189,6 +189,16 @@ fn pixels(cx: &mut AsyncWindowContext, color: &str) -> Result<usize> {
         })
         .count())
 }
+fn capture(cx: &mut AsyncWindowContext, name: &str) -> Result<()> {
+    let Some(directory) = std::env::var_os("BRIDGE_EXAMPLE_OUTPUT") else {
+        return Ok(());
+    };
+    stalled()?;
+    std::fs::create_dir_all(&directory)?;
+    cx.update(|window, _| window.render_to_image())??
+        .save(std::path::Path::new(&directory).join(name))?;
+    Ok(())
+}
 fn texture_pixel(
     cx: &mut AsyncWindowContext,
     bounds: &gpui_react_controls::geometry::Rect,
@@ -241,6 +251,7 @@ async fn run(
         .unwrap();
     let texture_pixel_before = texture_pixel(cx, &texture_before.bounds)?;
     let initial = input.read_with(cx, |input, _| input.current_snapshot());
+    capture(cx, "before.png")?;
     let commit = initial.painted.as_ref().unwrap().frame.unwrap().commit;
     for key in ["a", "b", "left", "shift-left", "backspace"] {
         stalled()?;
@@ -288,6 +299,7 @@ async fn run(
     );
     let caret_on = pixels(cx, "green")?;
     ensure!(caret_on > 5, "caret did not reach GPU pixels");
+    capture(cx, "after-typing.png")?;
     let animation_before = animation.get();
     let animation_pixels_before = pixels(cx, "orange")?;
     let first_frame = after_input.painted.as_ref().unwrap().frame.unwrap().frame;
@@ -331,6 +343,7 @@ async fn run(
     draw(cx)?;
     let hovered = pixels(cx, "magenta")?;
     ensure!(hovered > 100, "native hover style did not reach GPU pixels");
+    capture(cx, "after-scroll.png")?;
 
     let notifications = Rc::new(Cell::new(0));
     let count = notifications.clone();
@@ -389,6 +402,7 @@ async fn run(
         "native paint must advance without a React commit"
     );
     stalled()?;
+    capture(cx, "after.png")?;
     Ok(
         json!({"value":end.value,"revision":end.revision,"commit":commit,"nativeFrames":frame.frame-first_frame,"elapsedMs":started.elapsed().as_millis(),"scrollIndex":after_scroll.anchor.index,"caretOnPixels":caret_on,"caretOffPixels":caret_off,"hoverPixels":hovered,"animationBefore":animation_before,"animationAfter":animation.get(),"animationPixelsBefore":animation_pixels_before,"animationPixelsAfter":animation_pixels_after,"caretNotifications":notifications.get(),"textureBefore":texture_pixel_before,"textureAfter":texture_pixel_after,"textureGenerations":texture_after.generation-texture_before.generation}),
     )

@@ -6,6 +6,22 @@ Its `Render` implementation remains native. The small `ReactView` implementation
 maps props; optional traits expose typed events, commands and queries. No old
 GPUiX renderer or worker-side tree is linked.
 
+## Interactive example
+
+After the release build below, run `bun fixtures/bridge-counter/demo-host.ts`.
+The window opens inactive. It contains a native input, a 500-row virtual list,
+document selection/search, an ordinary Rust counter, and a React heartbeat.
+Click **Pause JavaScript for 5 seconds**, then type, scroll, or click the native
+counter. The heartbeat and JS event label pause. Native editing, scrolling,
+hover, and counter updates continue. When JS resumes, the label receives the
+queued events. Close the window to stop the example.
+
+Compile both `demo-host.ts` and `demo-worker.tsx` for a standalone executable.
+`BRIDGE_DEMO_AUTOCLOSE=1` runs a short startup/cleanup check.
+With the optional `interaction-tests` build, set `BRIDGE_DEMO_IMAGE` to a PNG
+path to capture the first complete native draw. This uses GPU readback, so a
+covered background window does not need to present a frame to the display.
+
 From the repository root, build a release binary:
 
 ```sh
@@ -57,6 +73,11 @@ React mounts the ordinary `Input`, `List`, and `Text` wrappers plus the external
 native driver then waits for a shared test flag. The worker sets that flag and
 runs a synchronous loop until the native script finishes. No JavaScript timer,
 React work, or event callback can run in that interval.
+
+Set `BRIDGE_EXAMPLE_OUTPUT` to a directory to save native GPU images before
+input, after typing, after scrolling, and after animation. All captures occur
+while the test flag proves the worker is still blocked. This option exists only
+in the fixture's optional test driver.
 
 The native script sends keystrokes and wheel events through GPUI and uses the
 platform input handler for IME. It checks selection deletion, undo, committed

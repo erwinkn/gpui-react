@@ -616,3 +616,31 @@ removed. Test windows stay hidden.
 I stand behind this package checkpoint. It does not establish full-frame or
 memory performance, publish a release, migrate Cherry, or add a new browser
 driver. Those limits remain explicit. No Pierre work was requested or resumed.
+
+### Interactive architecture example
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Add a runnable React example with the existing ordinary Rust counter, standard input/list/document controls, a React heartbeat, and a five-second worker pause. | Show only the existing assertion output. | High | The user needs to try the behavior directly. The pause leaves native controls active and delays only application work. The example is a fixture, not a claim about application-wide performance. |
+| Supply all 500 example rows and keep their React elements stable. | Fetch more row descriptions while scrolling. | High | A blocked worker cannot produce missing content. This example isolates native scrolling over committed content; the separate 100,000-row test covers a bounded React row window. |
+| Add optional native image capture only to the fixture's test feature. | Add screenshot methods to the production bridge or raise background windows for screen capture. | High | A fully covered macOS window can return a black OS screenshot because display callbacks stop. Native GPU readback captures the actual completed scene without activation. It is not evidence of physical presentation or display FPS. |
+| Reuse the published Pierre composition at its tested `5f5de7b` pin for the new-binding example. | Move the consumer's pin or resume its agent for this demonstration. | High | Pierre's source and relocated probes passed again, but this does not claim its full application has migrated or that it uses the latest GPUI drawing-context additions. |
+
+The interactive example passes source and compiled startup/cleanup checks and
+strict TypeScript checks. Its native image was inspected. Strict Clippy passes
+with the fixture's optional test feature. The blocked-worker probe passed with
+native typing, IME, selection/undo, scrolling, hover, caret and GPU animation.
+In the captured run, JavaScript was blocked for 585 ms and 19 further native
+draws used the same React commit. The document, toolbar, menu, connector, and
+nested-modal GPU examples passed again. The user tried the interactive example
+and confirmed that it worked well.
+
+I stand behind these examples and their stated limits. No core behavior changed
+for the demonstration. The next required work is the full-frame and memory
+comparison, followed by release publication and the final acceptance audit.
+
+The first broader repeat encountered generated `.bun-build` files from my
+concurrent manual compilation in the repository directory. The existing test
+correctly rejected those files. I removed only those generated files and ran
+the test alone. Its compilation already uses a temporary working directory;
+the assertion and application behavior were not changed.
