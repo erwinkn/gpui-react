@@ -664,3 +664,41 @@ resolves one GPUI crate. The broader measurements follow this checkpoint.
 
 I stand behind this method and its scope. It does not yet establish a performance
 result or complete the release work.
+
+### Retained memory and lifecycle costs
+
+The production allocation check confirms extra per-node storage in the new
+controls and bridge. With 5,000 supplied list rows, native memory before the
+first draw was 2.38 MiB for the existing renderer, 4.23 MiB for direct use of the
+new controls, and 5.98 MiB through the bridge. This excludes JavaScript and the
+old worker's tree. Style sharing, component granularity, and repeated child
+metadata remain open costs. These changes do not claim to resolve them all.
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Disable GPUI test support and leak tracking in timing and allocation builds; use a third build for image checks. | Continue using the first instrumented comparison as production evidence. | High | Test entity-handle tracking adds real memory and CPU work. The first full run remains diagnostic evidence only. The runner now rejects a default feature graph that contains test support or leak tracking. |
+| Measure the bridge and legacy root-removal transactions rather than their different shutdown helpers. | Compare `Host::clear` with normal legacy removal. | High | Shutdown cleanup hid the bridge's repeated sibling scans. The corrected fixture captures normal unmount, including an empty draw. |
+| Signal final focus-handle drops with one atomic flag on GPUI's existing map. | Scan all handles after every effect, or maintain another queue of dropped IDs. | High | The flag must not lose a concurrent final drop. The drop stores it while holding the map read lock; cleanup consumes it before acquiring the write lock. A concurrent drop may cause an extra sweep, but remains recorded. Existing cleanup and blur behavior stay in place. |
+| Detach only the removed subtree's root, then release its descendants in postorder. | Detach and invalidate ancestors for every removed node. | High | Surviving parents and ancestor measurement caches must still update. Tests cover wide and deep removal, child-before-parent hooks, cleared child handles, native identity, and moving a child out before removal in the same transaction. |
+| Store one optional event route and subscription only for components with the event capability. | Allocate a route on every component and a vector for its single possible subscription. | High | Components with events still need an ordered route even when no JS callback is currently set. The native view still survives through queued effects during unmount. Existing callback replacement, stale hitbox, removal, and drop tests remain unchanged. |
+| Use allocation and link-visit regressions rather than timing thresholds for these causes. | Rely only on a noisy elapsed-time limit. | High | These tests isolate redundant work; they cannot replace full native frame measurements. Before the fix, 128 effects visited 16,512 live focus records, a 128-node removal visited 8,002 links, and clearing an unsupported subscription allocated one callback. |
+| Fix the three small lint defects exposed by GPUI's full-feature check. | Leave the check failing or disable its warnings. | High | The AppKit test helper now names `NSRect` at its feature-gated use. Two native tests lose an unnecessary conversion or clone. Their behavior is unchanged. |
+
+All 284 GPUI library tests, 19 bridge tests, and 50 controls tests pass. The
+manual list timing test remains explicitly ignored in the ordinary test run.
+GPUI's required full-target/full-feature lint script and strict bridge Clippy
+pass. Source and output for the original failures are retained in thread
+evidence. Native release measurements follow these correctness checks.
+
+I stand behind these fixes and their stated scope. The remaining style and
+entity costs need further measurement and changes before the performance work
+is complete. The new runtime packages are not yet published.
+
+The release spot check also passes all 12 list cases across 100, 1,000, and
+5,000 supplied rows. At 5,000 rows, direct-control mount fell from about
+11.6 ms to 1.1 ms, bridge mount from 18.4 ms to 7.7 ms, and bridge removal plus
+empty draw from 15.4 ms to 2.0 ms. These are single-run diagnostics with raw
+samples retained, not the final repeated comparison. The allocation build
+shows bridge memory before drawing fall from 5.975 MiB to 5.760 MiB. The
+remaining gap is still material. Offscreen input, container, list, and document
+GPU examples pass, including IME, scroll groups, anchoring, and drag selection.

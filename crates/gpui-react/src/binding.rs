@@ -45,6 +45,11 @@ type ChildrenChanged<T> = fn(&Entity<T>, &[EntityId], &mut Window, &mut App);
 type Children<T> = fn(&Entity<T>, Vec<AnyView>, &mut Window, &mut App);
 type Subscribe<T> = fn(&Entity<T>, u64, Rc<Cell<Option<u64>>>, EventSink, &mut App) -> Subscription;
 
+struct EventRoute {
+    current: Rc<Cell<Option<u64>>>,
+    _subscription: Subscription,
+}
+
 pub struct Component<T: ReactView> {
     name: String,
     events: Option<Subscribe<T>>,
@@ -131,11 +136,11 @@ trait Binding {
         &self,
         props: Prepared,
         target: u64,
-        route: Rc<Cell<Option<u64>>>,
+        subscription: Option<u64>,
         sink: EventSink,
         window: &mut Window,
         cx: &mut App,
-    ) -> Result<(AnyView, Vec<Subscription>)>;
+    ) -> Result<(AnyView, Option<EventRoute>)>;
     fn apply(
         &self,
         view: &AnyView,
@@ -198,20 +203,23 @@ impl<T: ReactView> Binding for Component<T> {
         &self,
         props: Prepared,
         target: u64,
-        route: Rc<Cell<Option<u64>>>,
+        subscription: Option<u64>,
         sink: EventSink,
         window: &mut Window,
         cx: &mut App,
-    ) -> Result<(AnyView, Vec<Subscription>)> {
+    ) -> Result<(AnyView, Option<EventRoute>)> {
         let props = take::<T::Props>(props)?;
         let entity = cx.new(|cx| T::create(props, window, cx));
-        let subscriptions = self
-            .events
-            .map(|subscribe| subscribe(&entity, target, route, sink, cx))
-            .into_iter()
-            .collect();
+        let events = self.events.map(|subscribe| {
+            let current = Rc::new(Cell::new(subscription));
+            let subscription = subscribe(&entity, target, current.clone(), sink, cx);
+            EventRoute {
+                current,
+                _subscription: subscription,
+            }
+        });
         entity.update(cx, |view, cx| view.mounted(window, cx));
-        Ok((entity.into(), subscriptions))
+        Ok((entity.into(), events))
     }
 
     fn apply(
@@ -326,11 +334,10 @@ impl Registry {
         if options.subscription.is_some() && !binding.supports("events") {
             bail!("{name} has no events");
         }
-        let route = Rc::new(Cell::new(options.subscription));
-        let (view, subscriptions) = binding.mount(
+        let (view, events) = binding.mount(
             props,
             options.target,
-            route.clone(),
+            options.subscription,
             options.events,
             window,
             cx,
@@ -338,8 +345,7 @@ impl Registry {
         Ok(MountedView {
             view,
             binding,
-            route,
-            subscriptions,
+            events,
             unmounted: false,
         })
     }
@@ -348,8 +354,7 @@ impl Registry {
 pub struct MountedView {
     view: AnyView,
     binding: Rc<dyn Binding>,
-    route: Rc<Cell<Option<u64>>>,
-    subscriptions: Vec<Subscription>,
+    events: Option<EventRoute>,
     unmounted: bool,
 }
 
@@ -401,12 +406,16 @@ impl MountedView {
         if self.unmounted {
             bail!("view is unmounted");
         }
-        if subscription.is_some() && !self.binding.supports("events") {
-            bail!("view has no events");
-        }
+        let Some(events) = &self.events else {
+            return if subscription.is_some() {
+                Err(anyhow!("view has no events"))
+            } else {
+                Ok(())
+            };
+        };
         // GPUI emits events through its ordered effect queue. Update the route
         // in that same queue so earlier native commands retain their callback.
-        let route = self.route.clone();
+        let route = events.current.clone();
         cx.defer(move |_| route.set(subscription));
         Ok(())
     }
@@ -416,14 +425,14 @@ impl MountedView {
             return;
         }
         self.unmounted = true;
-        let route = self.route.clone();
-        let subscriptions = std::mem::take(&mut self.subscriptions);
+        let events = self.events.take();
         let view = self.view.clone();
         // Earlier Emit effects must run before retirement. Keep the entity
         // alive until then even if the owner removes its last normal handle.
         cx.defer(move |_| {
-            route.set(None);
-            drop(subscriptions);
+            if let Some(events) = events {
+                events.current.set(None);
+            }
             drop(view);
         });
         self.binding.unmount(&self.view, window, cx);
@@ -434,8 +443,10 @@ impl Drop for MountedView {
     fn drop(&mut self) {
         // A scene can still hold the GPUI view until its frame is retired.
         // Dropping the bridge must nevertheless stop its event delivery now.
-        if !self.unmounted {
-            self.route.set(None);
+        if !self.unmounted
+            && let Some(events) = &self.events
+        {
+            events.current.set(None);
         }
     }
 }

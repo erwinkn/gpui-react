@@ -62,6 +62,10 @@ existing native crate exposes `GpuixView::for_benchmark` only with the optional
 `bench-internals` Cargo feature. This diagnostic constructor adds no JS method.
 Native command errors do not undo earlier state changes. The host invalidates
 dependent geometry after each command invocation, including a failed command.
+Components without events allocate no event route or native subscription.
+Subtree removal detaches the root once, then releases descendants before their
+parents. The shared GPUI fork scans focus handles for cleanup only after a
+last-reference drop; creating views does not repeatedly scan live handles.
 
 GPU tests cover platform input, accessibility, nested and linked scrolling,
 large-list anchors, layout changes, and click routing. The source and relocated

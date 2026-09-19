@@ -301,9 +301,32 @@ impl Engine {
             }
         }
     }
-    fn clear(&mut self, window: &mut Window, cx: &mut App) {
-        if let Self::Bridge { host, .. } = self {
-            host.update(cx, |host, cx| host.clear(window, cx));
+    fn removal_wire(&mut self) -> String {
+        match self {
+            Self::Bridge { sequence, .. } => {
+                *sequence += 1;
+                json!({"version":1,"sequence":sequence,"operations":[{"op":"remove","id":1}]})
+                    .to_string()
+            }
+            Self::Legacy { .. } => "[[\"destroyElement\",1]]".into(),
+            _ => String::new(),
+        }
+    }
+    fn remove(&mut self, source: &str, window: &mut Window, cx: &mut App) {
+        match self {
+            Self::Bridge { host, .. } => {
+                let transaction = serde_json::from_str(source).unwrap();
+                host.update(cx, |host, cx| {
+                    host.apply(transaction, window, cx).unwrap();
+                    assert!(host.is_empty());
+                });
+            }
+            Self::Legacy { tree, .. } => {
+                let mut tree = tree.lock().unwrap();
+                apply_batch_to_tree(&mut tree, source.as_bytes()).unwrap();
+                assert!(tree.elements.is_empty());
+            }
+            _ => {}
         }
     }
 }
@@ -422,6 +445,7 @@ fn main() {
     let after_mount = mark();
     let (_, first_draw) = measure(|| scene.draw());
     let after_first_draw = mark();
+    #[cfg(feature = "scene-checks")]
     if let Some(dir) = std::env::var_os("FRAME_BENCH_IMAGES").filter(|path| !path.is_empty()) {
         std::fs::create_dir_all(&dir).unwrap();
         let image = scene
@@ -486,9 +510,10 @@ fn main() {
         }
     }
     let after_updates = mark();
+    let remove = engine.removal_wire();
     let (_, clear) = measure(|| {
         scene.update(|root, window, cx| {
-            engine.clear(window, cx);
+            engine.remove(&remove, window, cx);
             root.child = None;
             cx.notify();
         });

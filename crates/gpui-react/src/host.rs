@@ -5,6 +5,11 @@ use std::collections::{HashMap, HashSet};
 
 const MAX_SAFE_ID: u64 = (1 << 53) - 1;
 
+#[cfg(test)]
+thread_local! {
+    static LINK_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[derive(Clone)]
 struct Links {
     component: String,
@@ -55,6 +60,7 @@ enum Action {
         before: Option<u64>,
     },
     Remove {
+        id: u64,
         ids: Vec<u64>,
     },
     Hidden {
@@ -195,6 +201,7 @@ impl Host {
                     }
                 }
                 Operation::Remove { id } => Action::Remove {
+                    id,
                     ids: draft.remove(id)?,
                 },
                 Operation::Hidden { id, hidden } => {
@@ -308,10 +315,12 @@ impl Host {
                     dirty.insert(parent);
                     self.changed_parent_ancestors(child, &mut changed);
                 }
-                Action::Remove { ids } => {
+                Action::Remove { id, ids } => {
+                    // Only this subtree's connection to surviving views changes.
+                    // Its internal child lists are released with their owners.
+                    self.changed_parent_ancestors(id, &mut changed);
+                    self.detach(id, &mut dirty);
                     for id in ids {
-                        self.changed_parent_ancestors(id, &mut changed);
-                        self.detach(id, &mut dirty);
                         let mut entry = self.entries.remove(&id).unwrap();
                         if let Some(subscription) = entry.links.subscription {
                             reply.retired.push(subscription);
@@ -374,7 +383,11 @@ impl Host {
 
     fn detach(&mut self, id: u64, dirty: &mut HashSet<Option<u64>>) {
         if let Some(parent) = self.entries.get_mut(&id).unwrap().links.parent.take() {
-            self.child_ids_mut(parent).retain(|child| *child != id);
+            self.child_ids_mut(parent).retain(|child| {
+                #[cfg(test)]
+                LINK_VISITS.with(|visits| visits.set(visits.get() + 1));
+                *child != id
+            });
             dirty.insert(parent);
         }
     }
@@ -430,6 +443,8 @@ impl Host {
         while let Some(Some(Some(parent))) =
             self.entries.get(&child).map(|entry| entry.links.parent)
         {
+            #[cfg(test)]
+            LINK_VISITS.with(|visits| visits.set(visits.get() + 1));
             changed.entry(parent).or_default().insert(child);
             child = parent;
         }
@@ -578,5 +593,127 @@ impl<'a> Draft<'a> {
         }
         ids.reverse();
         Ok(ids)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Component, ReactChildren, ReactView};
+    use gpui::{Empty, TestAppContext};
+    use std::{cell::RefCell, sync::Arc};
+
+    thread_local! {
+        static UNMOUNTED: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
+    }
+
+    struct View {
+        id: u64,
+        children: Vec<AnyView>,
+    }
+    impl Render for View {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            Empty
+        }
+    }
+    impl ReactView for View {
+        type Props = u64;
+        fn create(id: u64, _: &mut Window, _: &mut Context<Self>) -> Self {
+            Self {
+                id,
+                children: vec![],
+            }
+        }
+        fn set_props(&mut self, _: u64, _: &mut Window, _: &mut Context<Self>) {}
+        fn unmounting(&mut self, _: &mut Window, _: &mut Context<Self>) {
+            assert!(
+                self.children.is_empty(),
+                "release child ownership before unmount"
+            );
+            UNMOUNTED.with(|ids| ids.borrow_mut().push(self.id));
+        }
+    }
+    impl ReactChildren for View {
+        fn set_children(&mut self, children: Vec<AnyView>, _: &mut Window, _: &mut Context<Self>) {
+            self.children = children;
+        }
+    }
+
+    #[gpui::test]
+    fn subtree_removal_has_linear_link_work_and_preserves_survivors(cx: &mut TestAppContext) {
+        for deep in [false, true] {
+            let mut registry = Registry::default();
+            registry
+                .register(Component::<View>::new("view").children())
+                .unwrap();
+            let window = cx.add_window(|_, _| Host::new(registry, Arc::new(|_| {})));
+            window
+                .update(cx, |host, window, cx| {
+                    let count = 128;
+                    let mut operations = Vec::new();
+                    for id in 1..=count {
+                        operations.push(Operation::Create {
+                            id,
+                            component: "view".into(),
+                            props: id.into(),
+                            subscription: None,
+                        });
+                        operations.push(Operation::Place {
+                            child: id,
+                            parent: match id {
+                                1 => None,
+                                2 | 3 => Some(1),
+                                _ if deep => Some(id - 2),
+                                _ => Some(2),
+                            },
+                            before: None,
+                        });
+                    }
+                    host.apply(
+                        Transaction {
+                            version: 1,
+                            sequence: 1,
+                            operations,
+                        },
+                        window,
+                        cx,
+                    )
+                    .unwrap();
+                    let survivor = host.view(3).unwrap().entity_id();
+                    LINK_VISITS.with(|visits| visits.set(0));
+                    UNMOUNTED.with(|ids| ids.borrow_mut().clear());
+                    host.apply(
+                        Transaction {
+                            version: 1,
+                            sequence: 2,
+                            operations: vec![Operation::Remove { id: 2 }],
+                        },
+                        window,
+                        cx,
+                    )
+                    .unwrap();
+                    let visits = LINK_VISITS.with(|visits| visits.get());
+                    assert!(
+                        visits <= count as usize * 4,
+                        "removing a subtree revisited {visits} links, deep={deep}"
+                    );
+                    assert_eq!(host.children(1), Some([3].as_slice()));
+                    assert_eq!(host.view(3).unwrap().entity_id(), survivor);
+                    let root = host.view(1).unwrap().clone().downcast::<View>().unwrap();
+                    assert_eq!(root.read(cx).children[0].entity_id(), survivor);
+                    UNMOUNTED.with(|ids| {
+                        let ids = ids.borrow();
+                        assert_eq!(ids.last(), Some(&2));
+                        assert!(!ids.contains(&3));
+                        if deep {
+                            for pair in ids.windows(2) {
+                                assert!(pair[0] > pair[1], "unmount descendants before ancestors");
+                            }
+                        }
+                    });
+                    host.clear(window, cx);
+                })
+                .unwrap();
+        }
     }
 }

@@ -24,6 +24,9 @@ Each process mounts once, changes only the status line beside unchanged rows,
 then alternates a one-row wheel movement. It records ten warmup operations and
 100 measured operations for each repeated case. Every wheel must be consumed
 by a native scroller. Removal clears the scene and draws an empty frame.
+The bridge and legacy modes apply their real root-removal operations; the
+direct modes drop their native view. This measures ordinary unmount rather
+than the new host's separate failure-shutdown cleanup method.
 The driver uses a hidden production-mode GPUI application. It asserts that
 mount and update do not draw, and that each explicit draw renders exactly once.
 `VisualTestAppContext` is unsuitable for these phase measurements because it
@@ -40,6 +43,11 @@ prepaint, paint, draw-completion callbacks, arena cleanup, and queued effects.
 presentation, React reconciliation, JS encoding, worker latency, or GPU
 completion. Native drawing can still prepare glyphs and atlas resources.
 
+The timing and allocation builds disable GPUI test support and entity leak
+tracking. The runner checks the resolved feature graph before building. A
+third build enables image capture solely for scene verification. This avoids
+charging production view creation/cloning for test-only tracking.
+
 The allocation build counts all requested Rust heap bytes in the process.
 It excludes Objective-C allocations, allocator metadata, GPU memory, and RSS.
 Live bytes are relative to an empty offscreen GPUI window. Input bytes and the
@@ -53,7 +61,7 @@ CARGO_TARGET_DIR=/tmp/gpuix-framework-target CARGO_BUILD_JOBS=3 \
   bun scripts/measure-bridge-frames.ts /tmp/gpuix-frame-cost
 ```
 
-The script builds both variants, then runs each mode in a separate process.
+The script builds all three variants, then runs each mode in a separate process.
 It first checks that all modes produce the same nonempty scene image. These
 image-check runs are separate from the timing and allocation samples.
 It uses 100, 1,000, and 5,000 supplied rows, three repeats, and rotates mode order.
@@ -62,6 +70,6 @@ benchmarks in progress. All windows stay off screen. Source dependency features
 and release optimization are shared by all four modes; this is not a timing
 comparison between independently built published binaries.
 
-For scene inspection, run the timing binary with `FRAME_BENCH_IMAGES` set to a
+For scene inspection, run the `scenes` binary with `FRAME_BENCH_IMAGES` set to a
 directory. Do not use that run for the memory table: GPU image capture can
 allocate and warm extra caches.

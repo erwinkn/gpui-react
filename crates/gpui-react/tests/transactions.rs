@@ -225,6 +225,65 @@ fn invalid_calls_return_errors_without_losing_other_committed_changes(cx: &mut T
 }
 
 #[gpui::test]
+fn moving_a_child_out_before_removal_preserves_it_and_invalidates_surviving_ancestors(
+    cx: &mut TestAppContext,
+) {
+    let window = cx.add_window(|_, _| Host::new(registry(), Arc::new(|_| {})));
+    window
+        .update(cx, |host, window, cx| {
+            host.apply(
+                tx(
+                    1,
+                    json!([
+                        create(1),
+                        create(2),
+                        create(3),
+                        create(4),
+                        create(5),
+                        place(None, 1, None),
+                        place(Some(1), 2, None),
+                        place(Some(2), 3, None),
+                        place(Some(3), 4, None),
+                        place(Some(2), 5, None)
+                    ]),
+                ),
+                window,
+                cx,
+            )
+            .unwrap();
+            let root = host.view(1).unwrap().clone().downcast::<View>().unwrap();
+            root.update(cx, |view, _| view.changed.clear());
+            let parent = host.view(2).unwrap().entity_id();
+            let survivor = host.view(4).unwrap().entity_id();
+            let reply = host
+                .apply(
+                    tx(
+                        2,
+                        json!([
+                            place(Some(2), 4, Some(5)),
+                            {"op":"remove", "id":3},
+                            {"op":"query", "id":2, "request":1, "value":null}
+                        ]),
+                    ),
+                    window,
+                    cx,
+                )
+                .unwrap();
+            assert_eq!(
+                reply.results[0].value,
+                Some(json!({"value":2,"children":[4,5]}))
+            );
+            assert_eq!(host.children(2), Some([4, 5].as_slice()));
+            assert_eq!(host.view(4).unwrap().entity_id(), survivor);
+            assert!(host.view(3).is_none());
+            assert_eq!(root.read(cx).changed, vec![vec![parent]]);
+            assert_eq!(host.len(), 4);
+            host.clear(window, cx);
+        })
+        .unwrap();
+}
+
+#[gpui::test]
 fn invalid_parent_and_insertion_anchor_leave_the_original_tree_unchanged(cx: &mut TestAppContext) {
     let window = cx.add_window(|_, _| Host::new(registry(), Arc::new(|_| {})));
     window.update(cx, |host, window, cx| {

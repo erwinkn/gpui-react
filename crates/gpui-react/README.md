@@ -45,6 +45,11 @@ occurs in the same native transaction. The view stays alive until that event
 has been processed. The event sink must enqueue without waiting for JavaScript and fail explicitly
 on overflow. It receives serialization errors as well as successful events.
 
+Components without the event capability allocate no event route or native
+subscription. Clearing their absent subscription is a no-op. Components with
+events retain one native subscription so later callback changes keep GPUI's
+effect order.
+
 Event routing follows GPUI's native effect queue. Once a subscription change
 has been applied in that queue, subsequent emissions use the new subscription.
 A previous frame's hitbox can still generate that emission before the next draw.
@@ -74,6 +79,10 @@ This rejects reuse without retaining deleted-node tombstones. Child views are
 synchronized once per affected parent before a command/query and at transaction
 end. Hidden children are omitted from layout while their native state remains
 mounted. `Host::clear` runs native cleanup while the window still exists.
+
+Subtree removal detaches its root from the surviving parent once. It releases
+descendants before their parents and clears native child handles before each
+unmount hook. Removed sibling lists are not repeatedly scanned.
 
 The local tests validate the real GPUI entity/subscription machinery and native
 transaction ownership. The separate counter composition tests the worker-host
