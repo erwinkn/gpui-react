@@ -28,8 +28,11 @@ before acknowledgements that retire their callback subscriptions.
 Windows remain inactive. The current test evidence covers source and compiled
 Bun workers, relocation, repeated host startup, missing/failed workers, malformed
 component props, and native executor progress during a blocked worker. Signal
-handling, richer controls, native input injection and complete distribution are
-still required before the replacement runtime is released.
+handling and complete distribution are still required before release. The
+counter fixture's optional `interaction-tests` build also checks native typing,
+selection, undo, IME, scroll, hover, caret and animated pixels during a blocked
+worker. Its source and relocated executable use the same production channel.
+Test-only native dispatch and image capture stay in the fixture.
 
 ```sh
 cargo test --manifest-path crates/gpui-react-host/Cargo.toml --release

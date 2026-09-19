@@ -36,6 +36,7 @@ The transport implements `send(encodedTransaction)`, `subscribe(receiver, onErro
 before the acknowledgement that retires their subscriptions. Query and command
 results carry request IDs. Missing results or invalid acknowledgement order
 fail the root. An individual command error rejects its promise.
+It does not undo native state changes that occurred before the error.
 Transport failure also reaches the root when no request is pending.
 
 The reconciler retains only speculative child descriptions until their commit.

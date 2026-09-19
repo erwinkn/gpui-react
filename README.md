@@ -37,10 +37,15 @@ scroll anchors. Horizontal panes can share one native scroll handle. Painted
 geometry includes the native root, draw, transaction, viewport, and scale.
 [Count-update measurements](./docs/bridge-list-performance.md) compare the native
 list binding with direct GPUI and document the range-based height-index update.
+Native command errors do not undo earlier state changes. The host invalidates
+dependent geometry after each command invocation, including a failed command.
 
 GPU tests cover platform input, accessibility, nested and linked scrolling,
 large-list anchors, layout changes, and click routing. The source and relocated
-worker fixtures verify first-frame anchors and keyed native identity. This remains
+worker fixtures verify first-frame anchors and keyed native identity. The
+optional native interaction driver also checks typing, IME, scrolling, hover,
+caret and animated pixels while the React worker is blocked. Delayed input
+events retain their original callback after React replaces it. This remains
 an implementation checkpoint: document text services, broader consumer cases,
 performance work, and release distribution are in progress. The existing API
 below remains usable. See the

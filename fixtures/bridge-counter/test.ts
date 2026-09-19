@@ -27,6 +27,11 @@ try {
   const list = await run("bun", [join(fixture, "host.ts")], undefined, "list")
   assert.match(list, /first-frame anchor/)
   console.log("PASS source list worker", list.trim())
+  if (process.env.BRIDGE_INTERACTION_TESTS === "1") {
+    const interaction = await run("bun", [join(fixture, "host.ts")], undefined, "interaction")
+    assert.match(interaction, /Native interaction during blocked JavaScript passed/)
+    console.log("PASS source interaction worker", interaction.trim())
+  }
   const repeat = await run("bun", [join(fixture, "host.ts")], undefined, "repeat")
   assert.equal(repeat.match(/Native counter state after worker stall/g)?.length, 3)
   console.log("PASS three sequential native sessions")
@@ -35,7 +40,7 @@ try {
     console.log(`PASS ${mode} cleanup`)
   }
   const binary = join(temporary, "build", "counter")
-  await run("bun", ["build", "--compile", join(fixture, "host.ts"), join(fixture, "worker.tsx"), join(fixture, "list-worker.tsx"), "--outfile", binary], temporary)
+  await run("bun", ["build", "--compile", join(fixture, "host.ts"), join(fixture, "worker.tsx"), join(fixture, "list-worker.tsx"), join(fixture, "interaction-worker.tsx"), "--outfile", binary], temporary)
   assert.deepEqual((await readdir(checkout)).filter(name => name.endsWith(".bun-build") && !originalFiles.has(name)), [], "Compilation left generated files in the checkout")
   const moved = join(temporary, "relocated", "counter")
   await cp(binary, moved, { recursive: true })
@@ -46,6 +51,11 @@ try {
   const packagedList = await run(moved, [], tmpdir(), "list")
   assert.match(packagedList, /first-frame anchor/)
   console.log("PASS relocated list worker", packagedList.trim())
+  if (process.env.BRIDGE_INTERACTION_TESTS === "1") {
+    const interaction = await run(moved, [], tmpdir(), "interaction")
+    assert.match(interaction, /Native interaction during blocked JavaScript passed/)
+    console.log("PASS relocated interaction worker", interaction.trim())
+  }
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

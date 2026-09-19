@@ -337,14 +337,20 @@ impl Host {
                     value,
                 } => {
                     self.sync_children(&mut dirty, &mut changed, window, cx)?;
+                    let mut invoked_command = false;
                     let result = value.and_then(|value| {
-                        self.entries
+                        let mounted = &self
+                            .entries
                             .get(&id)
                             .ok_or_else(|| anyhow!("unknown view {id}"))?
-                            .mounted
-                            .apply(kind, value, window, cx)
+                            .mounted;
+                        invoked_command = kind == "command";
+                        mounted.apply(kind, value, window, cx)
                     });
-                    if kind == "command" && result.is_ok() {
+                    // A native command may change state before returning an
+                    // error. Errors are not rollback; dependent caches must
+                    // still observe that invocation. Schema failures never run.
+                    if invoked_command {
                         self.changed_ancestors(id, &mut changed);
                     }
                     reply.results.push(CallResult::new(request, result));

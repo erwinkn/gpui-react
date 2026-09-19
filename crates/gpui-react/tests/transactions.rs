@@ -66,6 +66,20 @@ impl ReactQueries for View {
     }
 }
 
+impl ReactCommands for View {
+    type Command = u32;
+    fn command(
+        &mut self,
+        value: u32,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> anyhow::Result<()> {
+        self.value = value;
+        cx.notify();
+        anyhow::bail!("native operation failed after changing state")
+    }
+}
+
 fn registry() -> Registry {
     let mut registry = Registry::default();
     registry
@@ -332,4 +346,83 @@ fn prop_invalidation_survives_a_sibling_insert_in_the_same_commit(cx: &mut TestA
         assert_eq!(root.read(cx).changed,vec![vec![child.entity_id()]],"a parent can preserve existing child caches during insertion; their prop changes must still be reported");
         host.clear(window,cx);
     }).unwrap();
+}
+
+#[gpui::test]
+fn failed_native_command_still_invalidates_changed_descendants(cx: &mut TestAppContext) {
+    let window = cx.add_window(|_, _| {
+        let mut registry = registry();
+        registry
+            .register(Component::<View>::new("command-view").commands())
+            .unwrap();
+        Host::new(registry, Arc::new(|_| {}))
+    });
+    window
+        .update(cx, |host, window, cx| {
+            host.apply(
+                tx(
+                    1,
+                    json!([
+                        create(1),
+                        {"op":"create", "id":2, "component":"command-view", "props":{"value":2}},
+                        place(Some(1), 2, None),
+                        place(None, 1, None)
+                    ]),
+                ),
+                window,
+                cx,
+            )
+            .unwrap();
+            let parent = host.view(1).unwrap().clone().downcast::<View>().unwrap();
+            parent.update(cx, |view, _| view.changed.clear());
+            let child = host.view(2).unwrap().entity_id();
+            let reply = host
+                .apply(
+                    tx(
+                        2,
+                        json!([
+                            {"op":"command", "id":2, "request":1, "value":99},
+                            {"op":"query", "id":1, "request":2, "value":null}
+                        ]),
+                    ),
+                    window,
+                    cx,
+                )
+                .unwrap();
+            assert!(
+                reply.results[0]
+                    .error
+                    .as_ref()
+                    .unwrap()
+                    .contains("after changing state")
+            );
+            assert_eq!(
+                reply.results[1].value,
+                Some(json!({"value":1,"children":[99]}))
+            );
+            assert_eq!(
+                parent.read(cx).changed,
+                vec![vec![child]],
+                "an error does not roll back native changes or their geometry"
+            );
+            parent.update(cx, |view, _| view.changed.clear());
+            let reply = host
+                .apply(
+                    tx(
+                        3,
+                        json!([
+                            {"op":"command", "id":2, "request":3, "value":"invalid schema"}
+                        ]),
+                    ),
+                    window,
+                    cx,
+                )
+                .unwrap();
+            assert!(reply.results[0].error.is_some());
+            assert!(
+                parent.read(cx).changed.is_empty(),
+                "rejected schema never invokes native code"
+            );
+        })
+        .unwrap();
 }

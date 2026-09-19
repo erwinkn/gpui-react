@@ -7,6 +7,11 @@ pub use gpui_react_host::*;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+#[cfg(feature = "interaction-tests")]
+mod interaction;
+#[cfg(feature = "interaction-tests")]
+pub use interaction::{begin_worker_stall, finish_worker_stall, native_probe_done};
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Props {
@@ -124,6 +129,8 @@ impl ReactQueries for Counter {
 fn register() {
     register_components(|registry| {
         gpui_react_controls::register(registry)?;
+        #[cfg(feature = "interaction-tests")]
+        interaction::register(registry)?;
         registry.register(
             Component::<Counter>::new("counter")
                 .events()

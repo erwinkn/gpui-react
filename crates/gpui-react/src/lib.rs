@@ -69,10 +69,11 @@ pub trait ReactQueries: ReactView {
 pub trait ReactChildren: ReactView {
     fn set_children(&mut self, children: Vec<AnyView>, window: &mut Window, cx: &mut Context<Self>);
 
-    /// A committed prop, command, or descendant-structure update can change a
+    /// A committed prop, invoked command, or descendant-structure update can change a
     /// child's intrinsic size. Called once per affected direct child before the
     /// next command/query or transaction end. Containers with native caches can
     /// invalidate those entries; ordinary containers need no extra work.
+    /// A command can change state before returning an error, so it also counts.
     /// Native changes outside bridge transactions still use GPUI's own APIs.
     fn children_changed(
         &mut self,

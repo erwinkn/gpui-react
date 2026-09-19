@@ -58,7 +58,8 @@ validates complete transactions before component construction or mutation,
 using a temporary overlay of only affected topology records. Unknown parents,
 cycles, invalid insertion anchors, unsupported child slots, invalid props,
 reused IDs, and unplaced new views reject the transaction. Invalid commands or
-queries return request errors while valid mutations remain committed.
+queries return request errors while valid mutations remain committed. A native
+command error does not roll back state that the command already changed.
 
 Host IDs are allocated at React commit time and must increase within a session.
 This rejects reuse without retaining deleted-node tombstones. Child views are
@@ -72,8 +73,10 @@ application. Neither certifies physical display performance.
 
 Containers with native measurement caches can override
 `ReactChildren::children_changed`. The default does nothing. The host reports
-affected direct child entities after descendant prop, structure, or successful
-command changes. It groups changes before the next command/query or transaction
+affected direct child entities after descendant prop or structure changes and
+native command invocations, including commands that return an error. Invalid
+command schemas do not invoke native code or invalidate caches. The host groups
+changes before the next command/query or transaction
 end. Immediate topology changes use `set_children`. Prop or descendant changes
 inside retained children are still reported when that same transaction also
 changes the parent's child list.

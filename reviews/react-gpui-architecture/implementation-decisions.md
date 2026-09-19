@@ -196,3 +196,33 @@ native interaction during a worker stall, lifecycle and failure cases, document
 text services, consumer fixtures, and installed package distribution. The user
 authorized autonomous tested commits; this audit records the decisions without
 adding a new approval step.
+
+## Blocked-worker interaction checkpoint
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Use a fixture-only native driver and shared atomic flags to prove the worker is blocked. | Send each input through JavaScript or infer progress from a timer count. | High | A test that needs the blocked worker to inject input cannot test this boundary. The flags carry no UI data and do not enter production crates. |
+| Force native draws and inspect GPU images in a hidden window. | Raise an active window or claim a display cadence from an occluded window. | High | This does not establish physical presentation latency or frame rate. It verifies GPUI input, layout, and paint during the stall. |
+| Use GPUI keystroke dispatch and the platform input handler for IME. | Inject system-wide keyboard events. | High | This does not test OS keyboard routing or a specific IME application's candidate window. It exercises native editor handling without focus theft. |
+| Enable GPUI and macOS test support only through the composition fixture's optional feature. | Expose input injection and image capture on the production host API. | High | Test builds have more dependencies. Production host and controls crates gain no automation API or test flags. The first pixel attempt showed that GPUI test support alone does not enable the macOS image backend. |
+| Wait for both a caret pixel transition and its native timer notification. | Sample exactly one clock phase. | High | A GPU readback can cross the phase boundary before the queued timer task runs. The compiled fixture caught this test race. The new check retains both requirements with a two-second deadline. |
+| Replace the React event callback before the worker drains queued native edits. | Check only eventual event delivery. | High | Old subscriptions must survive until native retirement. The source and relocated cases require all queued edits on the original callback, with increasing native revisions. |
+| Invalidate dependent geometry whenever a typed native command is invoked, including an error return. | Invalidate only successful commands or add rollback state. | High | A no-op failed command can cause extra invalidation. A partially completed native command can change size before failing, so skipping it is incorrect. Invalid schemas still invoke nothing and cause no cache invalidation. The regression failed with an empty parent notification list before the fix. |
+| Add a fixture TypeScript configuration and local React type dependencies. | Rely on Bun execution without checking the example types. | High | The initial strict check found missing fixture type dependencies. The fixture now has a repeatable `typecheck` script. |
+
+Test-only timing choices are a four-second native animation, 25 ms pixel
+sampling, a two-second blink deadline, a five-second start deadline, and an
+eight-second worker deadline. They are failure bounds, not runtime scheduling
+promises. The animation assertion checks both its native phase and changed GPU
+pixels. The caret assertion also requires logical window focus throughout.
+
+Thirteen core tests and strict Clippy checks pass. The complete source and
+relocated fixture suite passes with the optional interaction driver. Strict
+TypeScript checking passes for all fixture entries. The worker produced no
+callbacks while blocked; native typing, selection deletion, undo, IME, list
+scrolling, hover, caret and animation continued. A delayed replacement with the
+old input revision was rejected afterward. No GPUI source change was needed.
+
+I stand behind this checkpoint. Signal and shutdown cases, inherited list
+geometry, document text services, external consumer fixtures, broader
+performance measurements, and distribution remain required work.
