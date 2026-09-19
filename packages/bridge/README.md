@@ -100,3 +100,11 @@ Use static binary paths and include both entries in a Bun compilation. The
 [counter fixture](../../fixtures/bridge-counter/README.md) contains source and
 relocated executable checks. This host currently supports macOS with Bun;
 cross-platform host and browser drivers remain separate work.
+
+Native measurement replies can include the exported `FrameInfo` type. Its
+`root` string identifies the native host within its application session; `frame` identifies a draw within it;
+`commit` identifies the latest native transaction incorporated into that draw.
+The other fields are `viewportWidth`, `viewportHeight`, and `scaleFactor`.
+A matching component prop revision alone does not establish fresh geometry:
+parent styles and viewport changes can also affect layout. Frame tags describe
+GPUI paint work and do not acknowledge physical display presentation.

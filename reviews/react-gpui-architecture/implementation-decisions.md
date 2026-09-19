@@ -123,3 +123,44 @@ and distribution. The standard controls live outside the minimal binding crate.
 
 I stand behind this input checkpoint and its stated limits. The full replacement
 is still under implementation; this checkpoint does not claim final completion.
+
+## Containers, lists, and paint metadata checkpoint
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Use GPUI's uniform-height hint API when the logical count changes. | Add a general GPUI splice API that accepts hints for only inserted rows. | Medium | The current API revisits the height index and changes measured entries into hinted entries. Correctness cases pass, but count-change cost and cache retention still need performance work before final release. This is a known open item, not a completed optimization. |
+| Start with an explicit text leaf. | Import the old document selection/search engine with its retained-tree dependencies. | Medium | `Text` currently has native paint inspection but no cross-component selection or search. Those remain required goal work. Separate native text children remain separate layout items; a full line should use one text value for now. |
+| Use direct native children as list rows, with an optional logical count and supplied window. | Add an application data model or a second row-description tree. | High | Each logical row needs one stable native root. A fragment or Suspense boundary that changes the number of direct host children must sit inside that row root. Applications must retain or reload content they need; native virtualization does not supply missing data. |
+| Add a default `ReactChildren::children_changed` hook. | Rebuild all children on every prop change, poll all heights every frame, or require JS to send a remeasure after every descendant update. | High | Containers with native caches need invalidation before dependent commands. A GPU regression demonstrated a changed offscreen row using its old height for a same-commit negative anchor. The host now groups affected direct branches without copying their props. Native changes outside bridge transactions still use normal GPUI invalidation APIs. |
+| Preserve the reader's keyed row identity across a full-list reorder. | Accept GPUI's replacement-range anchor for that operation. | High | The GPU test first jumped from row 0/offset 60 to row 0/offset 0. The binding now maps the existing row handle to its new index and calls GPUI's normal `scroll_to`. Top-pinned feeds still show prepended rows; windowed logical index changes remain application-owned. |
+| Use normal GPUI hit testing for generic containers and text, with explicit `blockMouse` on containers. | Unconditionally use `block_mouse_except_scroll` as the old renderer often does. | High | That method also excludes ancestor hitboxes. Two GPU failures showed text and a nested layout container swallowing their parent's click. The new controls use GPUI's normal path by default; overlays can opt into native mouse blocking. The source comment states this distinction from the old renderer's hitbox rule. |
+| Share native horizontal scroll handles through a window-scoped group. | Mirror offsets through React, or keep separate handles with a frame correction. | High | Group members must have equal content and viewport widths. The registry holds weak handles and removes expired groups on resolution. GPU tests compare header/body geometry in 72 frames with fractional deltas, separate groups, and detachment. |
+| Tag painted measurements with native root, draw, transaction, viewport, and scale. | Use only a component prop revision. | High | A parent's padding or font can change a leaf's bounds without changing its own props. A paint scope delegates GPUI's element lifecycle without adding a layout box. Nested hosts restore the outer scope; native transactions outside paint see no active scope. These tags do not claim physical presentation. |
+| Keep programmatic commands and missing-row requests separate from data loading. | Add fetch generations and cancellation to the renderer. | High | The application must reject stale asynchronous data responses and commit rows with their intended anchor. The renderer preserves accepted operation order and requests missing rows, but cannot manufacture application data. |
+
+Two proposed assertions were corrected after inspecting GPUI, rather than
+changing native behavior to satisfy them. An offscreen row's exact new height
+need not be known until layout measures it; estimates are intentional. The
+replacement test restores a negative anchor that actually requires that row's
+new height and failed before the fix. Also, GPUI may paint between two separate
+native calls. The stale-geometry test now queries inside the same atomic
+transaction as the layout change, then verifies the later frame tag and bounds.
+
+Validation includes eleven core tests, twenty-two control tests, three host
+queue tests, fourteen React/transport tests, and three GPU-backed scenarios.
+Source and relocated compiled workers validate input plus a 100,000-row logical
+list with sixty supplied rows, a correct first native frame, an ordered window
+replacement, and keyed identity. The GPU cases also cover the 50,000-row wheel
+delta, prepend overflow transition, tail following, native scroll callbacks,
+axes, negative anchors, keyed row moves, outer boxes, mouse routing, and hidden
+input regions. No GPUI source changes are included in this checkpoint.
+
+The callback-generation contract still needs a dedicated old-pixels/new-native-
+state test in the broader lifecycle pass. Current generations follow native
+subscription application and GPUI effect order; they do not freeze component
+state until OS presentation. That distinction must stay explicit in the final
+contract. Document text services, native input during a blocked worker, large
+consumer fixtures, measured performance, and package release remain goal work.
+
+I stand behind this correctness checkpoint and its stated limits. It is not the
+final performance or release checkpoint.

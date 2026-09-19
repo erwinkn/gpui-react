@@ -1,6 +1,6 @@
 use crate::{ReactChildren, ReactCommands, ReactEvents, ReactQueries, ReactView};
 use anyhow::{Context as _, Result, anyhow, bail};
-use gpui::{AnyView, App, AppContext, Entity, Subscription, Window};
+use gpui::{AnyView, App, AppContext, Entity, EntityId, Subscription, Window};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::{any::Any, cell::Cell, collections::HashMap, marker::PhantomData, rc::Rc, sync::Arc};
@@ -41,6 +41,7 @@ pub struct MountOptions {
 
 type Decode = fn(Value) -> Result<Prepared>;
 type Apply<T> = fn(&Entity<T>, Prepared, &mut Window, &mut App) -> Result<Value>;
+type ChildrenChanged<T> = fn(&Entity<T>, &[EntityId], &mut Window, &mut App);
 type Children<T> = fn(&Entity<T>, Vec<AnyView>, &mut Window, &mut App);
 type Subscribe<T> = fn(&Entity<T>, u64, Rc<Cell<Option<u64>>>, EventSink, &mut App) -> Subscription;
 
@@ -50,6 +51,7 @@ pub struct Component<T: ReactView> {
     command: Option<(Decode, Apply<T>)>,
     query: Option<(Decode, Apply<T>)>,
     children: Option<Children<T>>,
+    children_changed: Option<ChildrenChanged<T>>,
     _view: PhantomData<fn() -> T>,
 }
 
@@ -61,6 +63,7 @@ impl<T: ReactView> Component<T> {
             command: None,
             query: None,
             children: None,
+            children_changed: None,
             _view: PhantomData,
         }
     }
@@ -114,6 +117,9 @@ impl<T: ReactView> Component<T> {
         self.children = Some(|entity, children, window, cx| {
             entity.update(cx, |view, cx| view.set_children(children, window, cx));
         });
+        self.children_changed = Some(|entity, children, window, cx| {
+            entity.update(cx, |view, cx| view.children_changed(children, window, cx));
+        });
         self
     }
 }
@@ -145,6 +151,13 @@ trait Binding {
         window: &mut Window,
         cx: &mut App,
     ) -> Result<()>;
+    fn children_changed(
+        &self,
+        view: &AnyView,
+        children: &[EntityId],
+        window: &mut Window,
+        cx: &mut App,
+    );
     fn unmount(&self, view: &AnyView, window: &mut Window, cx: &mut App);
 }
 
@@ -240,6 +253,18 @@ impl<T: ReactView> Binding for Component<T> {
             .ok_or_else(|| anyhow!("{} does not accept children", self.name))?;
         apply(&entity::<T>(view), children, window, cx);
         Ok(())
+    }
+
+    fn children_changed(
+        &self,
+        view: &AnyView,
+        children: &[EntityId],
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if let Some(apply) = self.children_changed {
+            apply(&entity::<T>(view), children, window, cx);
+        }
     }
 
     fn unmount(&self, view: &AnyView, window: &mut Window, cx: &mut App) {
@@ -363,6 +388,13 @@ impl MountedView {
             bail!("view is unmounted");
         }
         self.binding.children(&self.view, children, window, cx)
+    }
+
+    pub fn children_changed(&self, children: &[EntityId], window: &mut Window, cx: &mut App) {
+        if !self.unmounted {
+            self.binding
+                .children_changed(&self.view, children, window, cx);
+        }
     }
 
     pub fn set_subscription(&self, subscription: Option<u64>, cx: &mut App) -> Result<()> {

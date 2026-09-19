@@ -28,6 +28,7 @@ pub struct Host {
     roots: Vec<u64>,
     events: EventSink,
     sequence: u64,
+    frame: u64,
     last_id: u64,
     last_subscription: u64,
     last_request: u64,
@@ -76,6 +77,7 @@ impl Host {
             roots: Vec::new(),
             events,
             sequence: 0,
+            frame: 0,
             last_id: 0,
             last_subscription: 0,
             last_request: 0,
@@ -239,6 +241,7 @@ impl Host {
             results: vec![],
         };
         let mut dirty = HashSet::new();
+        let mut changed = HashMap::new();
         for action in actions {
             match action {
                 Action::Create {
@@ -276,6 +279,7 @@ impl Host {
                     self.entries[&id]
                         .mounted
                         .apply("props", props, window, cx)?;
+                    self.changed_ancestors(id, &mut changed);
                 }
                 Action::Listen { id, subscription } => {
                     let entry = self.entries.get_mut(&id).unwrap();
@@ -293,6 +297,7 @@ impl Host {
                     if before == Some(child) {
                         continue;
                     }
+                    self.changed_ancestors(child, &mut changed);
                     self.detach(child, &mut dirty);
                     let children = self.child_ids_mut(parent);
                     let index = before
@@ -301,9 +306,11 @@ impl Host {
                     children.insert(index, child);
                     self.entries.get_mut(&child).unwrap().links.parent = Some(parent);
                     dirty.insert(parent);
+                    self.changed_ancestors(child, &mut changed);
                 }
                 Action::Remove { ids } => {
                     for id in ids {
+                        self.changed_ancestors(id, &mut changed);
                         self.detach(id, &mut dirty);
                         let mut entry = self.entries.remove(&id).unwrap();
                         if let Some(subscription) = entry.links.subscription {
@@ -316,6 +323,7 @@ impl Host {
                     }
                 }
                 Action::Hidden { id, hidden } => {
+                    self.changed_ancestors(id, &mut changed);
                     let links = &mut self.entries.get_mut(&id).unwrap().links;
                     links.hidden = hidden;
                     if let Some(parent) = links.parent {
@@ -328,7 +336,7 @@ impl Host {
                     kind,
                     value,
                 } => {
-                    self.sync_children(&mut dirty, window, cx)?;
+                    self.sync_children(&mut dirty, &mut changed, window, cx)?;
                     let result = value.and_then(|value| {
                         self.entries
                             .get(&id)
@@ -336,11 +344,14 @@ impl Host {
                             .mounted
                             .apply(kind, value, window, cx)
                     });
+                    if kind == "command" && result.is_ok() {
+                        self.changed_ancestors(id, &mut changed);
+                    }
                     reply.results.push(CallResult::new(request, result));
                 }
             }
         }
-        self.sync_children(&mut dirty, window, cx)?;
+        self.sync_children(&mut dirty, &mut changed, window, cx)?;
         self.sequence = transaction.sequence;
         self.last_id = last_id;
         self.last_subscription = last_subscription;
@@ -365,12 +376,14 @@ impl Host {
     fn sync_children(
         &self,
         dirty: &mut HashSet<Option<u64>>,
+        changed: &mut HashMap<u64, HashSet<u64>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<()> {
         for parent in dirty.drain() {
             match parent {
                 Some(id) => {
+                    changed.remove(&id); // set_children already handles structural invalidation.
                     if let Some(entry) = self.entries.get(&id) {
                         let children = self.visible(&entry.links.children);
                         entry.mounted.set_children(children, window, cx)?;
@@ -379,7 +392,34 @@ impl Host {
                 None => cx.notify(),
             }
         }
+        for (parent, children) in changed.drain() {
+            if let Some(entry) = self.entries.get(&parent) {
+                let affected: Vec<_> = entry
+                    .links
+                    .children
+                    .iter()
+                    .filter(|id| children.contains(id))
+                    .filter_map(|id| {
+                        self.entries
+                            .get(id)
+                            .map(|entry| entry.mounted.view().entity_id())
+                    })
+                    .collect();
+                if !affected.is_empty() {
+                    entry.mounted.children_changed(&affected, window, cx);
+                }
+            }
+        }
         Ok(())
+    }
+
+    fn changed_ancestors(&self, mut child: u64, changed: &mut HashMap<u64, HashSet<u64>>) {
+        while let Some(Some(Some(parent))) =
+            self.entries.get(&child).map(|entry| entry.links.parent)
+        {
+            changed.entry(parent).or_default().insert(child);
+            child = parent;
+        }
     }
 
     fn visible(&self, ids: &[u64]) -> Vec<AnyView> {
@@ -415,8 +455,22 @@ impl Host {
 }
 
 impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().children(self.visible(&self.roots))
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.frame += 1;
+        crate::frame::FrameScope {
+            child: div()
+                .size_full()
+                .children(self.visible(&self.roots))
+                .into_any_element(),
+            info: crate::FrameInfo {
+                root: cx.entity_id().as_u64(),
+                frame: self.frame,
+                commit: self.sequence,
+                viewport_width: window.viewport_size().width.into(),
+                viewport_height: window.viewport_size().height.into(),
+                scale_factor: window.scale_factor(),
+            },
+        }
     }
 }
 

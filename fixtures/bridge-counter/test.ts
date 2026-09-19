@@ -24,6 +24,9 @@ try {
   const source = await run("bun", [join(fixture, "host.ts")])
   assert.match(source, /Native counter worker completed/)
   console.log("PASS source worker", source.trim())
+  const list = await run("bun", [join(fixture, "host.ts")], undefined, "list")
+  assert.match(list, /first-frame anchor/)
+  console.log("PASS source list worker", list.trim())
   const repeat = await run("bun", [join(fixture, "host.ts")], undefined, "repeat")
   assert.equal(repeat.match(/Native counter state after worker stall/g)?.length, 3)
   console.log("PASS three sequential native sessions")
@@ -32,7 +35,7 @@ try {
     console.log(`PASS ${mode} cleanup`)
   }
   const binary = join(temporary, "build", "counter")
-  await run("bun", ["build", "--compile", join(fixture, "host.ts"), join(fixture, "worker.tsx"), "--outfile", binary], temporary)
+  await run("bun", ["build", "--compile", join(fixture, "host.ts"), join(fixture, "worker.tsx"), join(fixture, "list-worker.tsx"), "--outfile", binary], temporary)
   assert.deepEqual((await readdir(checkout)).filter(name => name.endsWith(".bun-build") && !originalFiles.has(name)), [], "Compilation left generated files in the checkout")
   const moved = join(temporary, "relocated", "counter")
   await cp(binary, moved, { recursive: true })
@@ -40,6 +43,9 @@ try {
   const packaged = await run(moved, [], tmpdir())
   assert.match(packaged, /Native counter worker completed/)
   console.log("PASS relocated executable", packaged.trim())
+  const packagedList = await run(moved, [], tmpdir(), "list")
+  assert.match(packagedList, /first-frame anchor/)
+  console.log("PASS relocated list worker", packagedList.trim())
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

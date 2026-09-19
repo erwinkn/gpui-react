@@ -26,14 +26,22 @@ GPUiX renderer or maintain a worker-side Rust tree.
 The new macOS host runs a compiled component composition with an explicit Bun
 application worker. The [counter fixture](./fixtures/bridge-counter/README.md)
 tests props, events, commands, queries, worker stalls, repeated startup, startup
-failure, invalid commits, and a relocated compiled executable. The first
-[standard native control](./crates/gpui-react-controls/README.md) is an ordinary
-GPUI input with a typed [React wrapper](./packages/bridge-controls/README.md).
-Native state owns its text, selection, IME, undo, and caret. Asynchronous
-replacement commands require the current revision; delayed props do not erase
-new typing. GPU tests cover platform input, accessibility, and nested scrolling.
-This remains an implementation checkpoint: the wider control library, component
-regression coverage, and release distribution are in progress. The existing API below remains usable. See the
+failure, invalid commits, and a relocated compiled executable. The
+[standard controls](./crates/gpui-react-controls/README.md) now include an ordinary
+GPUI input, container, text leaf, and variable-height list, with
+[typed React wrappers and their API contract](./packages/bridge-controls/README.md).
+Native state owns input text, selection, IME, undo, caret, and scroll positions.
+Delayed replacements require the input revision. Lists can use a bounded React
+row window over 100,000 logical rows, with missing-row requests and ordered
+scroll anchors. Horizontal panes can share one native scroll handle. Painted
+geometry includes the native root, draw, transaction, viewport, and scale.
+
+GPU tests cover platform input, accessibility, nested and linked scrolling,
+large-list anchors, layout changes, and click routing. The source and relocated
+worker fixtures verify first-frame anchors and keyed native identity. This remains
+an implementation checkpoint: document text services, broader consumer cases,
+performance work, and release distribution are in progress. The existing API
+below remains usable. See the
 [accepted architecture and scenarios](./reviews/react-gpui-architecture/scenario-matrix.md).
 
 ### Native-owned application loop on macOS

@@ -353,6 +353,7 @@ pub struct Input {
     selection_color: gpui::Hsla,
     painted_bounds: Option<Bounds<Pixels>>,
     painted_revision: Option<u64>,
+    painted_frame: Option<gpui_react::FrameInfo>,
     focus_handle: FocusHandle,
     content: String,
     placeholder: SharedString,
@@ -1590,9 +1591,10 @@ impl gpui::Element for EditorTextElement {
                 window.paint_quad(quad);
             }
             let (lines, line_height, scroll_top, scroll_left) =
-                self.input.update(cx, |input, _| {
+                self.input.update(cx, |input, cx| {
                     input.painted_bounds = Some(bounds);
                     input.painted_revision = Some(input.revision);
+                    input.painted_frame = gpui_react::current_frame(window, cx);
                     (
                         std::mem::take(&mut input.last_lines),
                         input.line_height,
@@ -1700,6 +1702,7 @@ pub struct PaintedBounds {
     pub width: f32,
     pub height: f32,
     pub revision: u64,
+    pub frame: Option<gpui_react::FrameInfo>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1767,6 +1770,7 @@ impl Input {
             selection_color: gpui::rgba(0x7c86ff59).into(),
             painted_bounds: None,
             painted_revision: None,
+            painted_frame: None,
             focus_handle: cx.focus_handle(),
             content,
             placeholder: "".into(),
@@ -1854,6 +1858,7 @@ impl Input {
                     width: b.size.width.into(),
                     height: b.size.height.into(),
                     revision,
+                    frame: self.painted_frame,
                 }),
         }
     }

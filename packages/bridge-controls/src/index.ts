@@ -1,4 +1,4 @@
-import { nativeComponent, type NativeRef } from "@gpuix/bridge"
+import { nativeComponent, type NativeRef, type FrameInfo } from "@gpuix/bridge"
 
 export type Length = number | "100%" | "auto"
 export interface Style {
@@ -39,7 +39,7 @@ export interface InputSnapshot {
   selection: Selection
   composing: boolean
   /** Last painted content bounds; the revision can be older than current state. */
-  painted: { x: number; y: number; width: number; height: number; revision: number } | null
+  painted: { x: number; y: number; width: number; height: number; revision: number; frame: FrameInfo | null } | null
 }
 export type InputEvent =
   | { type: "change"; snapshot: InputSnapshot }
@@ -53,3 +53,51 @@ export type InputCommand =
   | { type: "select"; selection: Selection; expectedRevision: number }
 export type InputRef = NativeRef<InputCommand, null, InputSnapshot>
 export const Input = nativeComponent<InputProps, InputEvent, InputCommand, null, InputSnapshot>("input")
+
+export interface Rect { x: number; y: number; width: number; height: number }
+export type { FrameInfo } from "@gpuix/bridge"
+export interface Painted { bounds: Rect; revision: number; frame: FrameInfo | null }
+export interface ContainerProps {
+  style?: Style
+  scroll?: "none" | "x" | "y" | "both"
+  scrollGroup?: string
+  blockMouse?: boolean
+  focusable?: boolean
+  label?: string
+}
+export type ContainerEvent =
+  | { type: "click"; x: number; y: number }
+  | { type: "wheel"; x: number; y: number; dx: number; dy: number; offset: { x: number; y: number } }
+export type ContainerCommand = { type: "focus" | "blur" } | { type: "scrollTo"; x: number; y: number }
+export interface ContainerSnapshot {
+  painted: Painted | null; revision: number; offset: { x: number; y: number }; childCount: number; focused: boolean
+}
+export type ContainerRef = NativeRef<ContainerCommand, null, ContainerSnapshot>
+export const Container = nativeComponent<ContainerProps, ContainerEvent, ContainerCommand, null, ContainerSnapshot>("container")
+export interface TextProps { text: string; style?: Style }
+export interface TextSnapshot { text: string; revision: number; painted: Painted | null }
+export type TextRef = NativeRef<never, null, TextSnapshot>
+export const Text = nativeComponent<TextProps, never, never, null, TextSnapshot>("text")
+export interface ListProps {
+  style?: Style
+  itemCount?: number
+  windowStart?: number
+  estimatedItemHeight?: number
+  overdraw?: number
+  alignment?: "top" | "bottom"
+  followTail?: boolean
+}
+export interface RowRange { start: number; end: number }
+export type ListEvent =
+  | { type: "needRows"; range: RowRange }
+  | { type: "scroll"; range: RowRange; followingTail: boolean }
+export type ListCommand =
+  | { type: "scrollTo"; index: number; offset?: number }
+  | { type: "end" }
+  | { type: "remeasure"; start: number; end: number }
+export interface ListSnapshot {
+  itemCount: number; supplied: RowRange; anchor: { index: number; offset: number }; followingTail: boolean
+  painted: Painted | null; revision: number; paintedRows: RowRange | null; maxScrollY: number
+}
+export type ListRef = NativeRef<ListCommand, null, ListSnapshot>
+export const List = nativeComponent<ListProps, ListEvent, ListCommand, null, ListSnapshot>("list")

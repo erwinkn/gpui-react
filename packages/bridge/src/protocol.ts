@@ -34,3 +34,13 @@ export interface NativeRef<Command = unknown, Query = unknown, Reply = unknown> 
   command(value: Command): Promise<void>
   query(value: Query): Promise<Reply>
 }
+
+/** Native draw metadata. This is not an OS presentation acknowledgement. */
+export interface FrameInfo {
+  root: string
+  frame: number
+  commit: number
+  viewportWidth: number
+  viewportHeight: number
+  scaleFactor: number
+}

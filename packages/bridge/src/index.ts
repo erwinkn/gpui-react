@@ -2,7 +2,7 @@ import React, { createContext, createElement, type ReactNode, type Ref } from "r
 import ReactReconciler from "react-reconciler"
 import { ConcurrentRoot, DefaultEventPriority } from "react-reconciler/constants.js"
 import type { NativeEvent, NativeProps, NativeRef, Operation, Transaction, TransactionReply, Transport } from "./protocol.js"
-export type { NativeEvent, NativeRef, Operation, Transaction, TransactionReply, Transport } from "./protocol.js"
+export type { FrameInfo, NativeEvent, NativeRef, Operation, Transaction, TransactionReply, Transport } from "./protocol.js"
 
 export function nativeComponent<Props extends object, Event = never, Command = unknown, Query = unknown, Reply = unknown>(name: string) {
   if (!/^[a-z0-9-]+$/.test(name)) throw Error("Invalid native component name")

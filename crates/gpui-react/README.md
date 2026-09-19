@@ -69,3 +69,20 @@ mounted. `Host::clear` runs native cleanup while the window still exists.
 The local tests validate the real GPUI entity/subscription machinery and native
 transaction ownership. The separate counter composition tests the worker-host
 application. Neither certifies physical display performance.
+
+Containers with native measurement caches can override
+`ReactChildren::children_changed`. The default does nothing. The host reports
+affected direct child entities after descendant prop, structure, or successful
+command changes. It groups changes before the next command/query or transaction
+end. A structural `set_children` already provides that parent's invalidation.
+This lets a virtual list invalidate changed row heights before applying a scroll
+anchor. It does not copy child props or create a second tree. Native changes
+outside bridge transactions still use the component's ordinary GPUI cache APIs.
+
+A native component can call `current_frame(window, cx)` during paint. Below a
+`Host`, it returns `FrameInfo` with the host identity, draw number, incorporated
+transaction, viewport size, and scale factor. It returns `None` outside that
+paint scope. Nested hosts restore the enclosing scope. The scope delegates the
+normal element lifecycle without adding a layout box. These records identify
+native paint work, not physical OS presentation. A component should retain the
+record with its measured bounds, rather than read it later during a query.

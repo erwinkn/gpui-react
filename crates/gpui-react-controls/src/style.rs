@@ -204,10 +204,10 @@ fn checked_f32<E: serde::de::Error>(value: f64) -> Result<f32, E> {
     }
     Ok(number)
 }
-fn finite<'de, D: Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+pub(crate) fn finite<'de, D: Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
     checked_f32(f64::deserialize(d)?)
 }
-fn optional_finite<'de, D: Deserializer<'de>>(d: D) -> Result<Option<f32>, D::Error> {
+pub(crate) fn optional_finite<'de, D: Deserializer<'de>>(d: D) -> Result<Option<f32>, D::Error> {
     Option::<f64>::deserialize(d)?.map(checked_f32).transpose()
 }
 

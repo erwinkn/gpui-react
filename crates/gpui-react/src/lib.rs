@@ -5,12 +5,14 @@
 //! No JavaScript runtime or worker-side native description tree is required.
 
 mod binding;
+mod frame;
 mod host;
+pub use frame::{FrameInfo, current_frame};
 pub mod protocol;
 
 pub use binding::{Component, Emission, EventSink, MountOptions, MountedView, Prepared, Registry};
 pub use gpui;
-use gpui::{AnyView, Context, EventEmitter, Render, Window};
+use gpui::{AnyView, Context, EntityId, EventEmitter, Render, Window};
 pub use host::Host;
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -49,7 +51,8 @@ pub trait ReactCommands: ReactView {
 }
 
 /// A query observes native state when it executes on the UI thread. It does not
-/// implicitly perform layout. Frame measurements need an explicit frame query.
+/// implicitly perform layout. Painted measurements should include `current_frame`
+/// metadata recorded during paint.
 pub trait ReactQueries: ReactView {
     type Query: DeserializeOwned + 'static;
     type Reply: Serialize;
@@ -65,4 +68,17 @@ pub trait ReactQueries: ReactView {
 /// their state. Components keep and render them using normal GPUI composition.
 pub trait ReactChildren: ReactView {
     fn set_children(&mut self, children: Vec<AnyView>, window: &mut Window, cx: &mut Context<Self>);
+
+    /// A committed prop, command, or descendant-structure update can change a
+    /// child's intrinsic size. Called once per affected direct child before the
+    /// next command/query or transaction end. Containers with native caches can
+    /// invalidate those entries; ordinary containers need no extra work.
+    /// Native changes outside bridge transactions still use GPUI's own APIs.
+    fn children_changed(
+        &mut self,
+        _children: &[EntityId],
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+    }
 }

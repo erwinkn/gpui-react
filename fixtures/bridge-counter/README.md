@@ -1,7 +1,7 @@
 # Ordinary GPUI counter with a React wrapper
 
 This composition links the new bridge host, an ordinary GPUI counter, and the
-new native input control.
+new native controls.
 Its `Render` implementation remains native. The small `ReactView` implementation
 maps props; optional traits expose typed events, commands and queries. No old
 GPUiX renderer or worker-side tree is linked.
@@ -28,10 +28,12 @@ The test keeps windows in the background and closes its own processes. It checks
   prop changes that preserve native text.
 - Three sequential native sessions in one process.
 - Worker startup error, missing worker entry, and rejected native props.
-- A compiled Bun executable with both entries, moved outside its build directory.
+- A 100,000-row logical list supplied with sixty React rows, a first-frame
+  layout-effect anchor, an atomic row-window change, and keyed child identity.
+- A compiled Bun executable with all worker entries, moved outside its build directory.
 
 The final state reports a native render count, but occluded windows need not draw
 on every update. Native timer progress does not measure display FPS or
 input-to-photon latency. The controls crate has a separate GPU-backed keyboard,
-IME, accessibility, and nested-scroll test. List, rich-text, and editor examples
-remain later validation stages.
+IME, accessibility, and nested-scroll test. The native controls also have list and shared-scroll scenarios. Document text
+services and external editor examples remain later validation stages.

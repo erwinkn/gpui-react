@@ -16,6 +16,7 @@ struct View {
     value: u32,
     children: Vec<AnyView>,
     renders: u32,
+    changed: Vec<Vec<gpui::EntityId>>,
 }
 impl Render for View {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -30,6 +31,7 @@ impl ReactView for View {
             value: props.value,
             children: vec![],
             renders: 0,
+            changed: vec![],
         }
     }
     fn set_props(&mut self, props: Props, _: &mut Window, cx: &mut Context<Self>) {
@@ -38,6 +40,14 @@ impl ReactView for View {
     }
 }
 impl ReactChildren for View {
+    fn children_changed(
+        &mut self,
+        children: &[gpui::EntityId],
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) {
+        self.changed.push(children.to_vec());
+    }
     fn set_children(&mut self, children: Vec<AnyView>, _: &mut Window, cx: &mut Context<Self>) {
         self.children = children;
         cx.notify();
@@ -238,5 +248,63 @@ fn a_state_query_does_not_rebuild_an_unchanged_native_view(cx: &mut TestAppConte
     assert_eq!(view.read_with(cx, |view, _| view.renders), before);
     window
         .update(cx, |host, window, cx| host.clear(window, cx))
+        .unwrap();
+}
+
+#[gpui::test]
+fn descendant_updates_invalidate_each_direct_branch_once_before_queries(cx: &mut TestAppContext) {
+    let window = cx.add_window(|_, _| Host::new(registry(), Arc::new(|_| {})));
+    window
+        .update(cx, |host, window, cx| {
+            host.apply(
+                tx(
+                    1,
+                    json!([
+                        create(1),
+                        place(None, 1, None),
+                        create(2),
+                        place(Some(1), 2, None),
+                        create(3),
+                        place(Some(2), 3, None)
+                    ]),
+                ),
+                window,
+                cx,
+            )
+            .unwrap();
+            let root = host.view(1).unwrap().clone().downcast::<View>().unwrap();
+            let child = host.view(2).unwrap().clone().downcast::<View>().unwrap();
+            let leaf = host.view(3).unwrap().clone().downcast::<View>().unwrap();
+            host.apply(
+                tx(
+                    2,
+                    json!([
+                        {"op":"props","id":3,"props":{"value":30}},
+                        {"op":"props","id":3,"props":{"value":31}},
+                        {"op":"query","id":1,"request":1,"value":null}
+                    ]),
+                ),
+                window,
+                cx,
+            )
+            .unwrap();
+            assert_eq!(root.read(cx).changed, vec![vec![child.entity_id()]]);
+            assert_eq!(child.read(cx).changed, vec![vec![leaf.entity_id()]]);
+            host.apply(
+                tx(
+                    3,
+                    json!([
+                        place(Some(1),3,Some(2)),{"op":"props","id":3,"props":{"value":32}},
+                        {"op":"remove","id":2},{"op":"query","id":1,"request":2,"value":null}
+                    ]),
+                ),
+                window,
+                cx,
+            )
+            .unwrap();
+            // Structural synchronization already invalidates this parent.
+            assert_eq!(root.read(cx).changed.len(), 1);
+            host.clear(window, cx);
+        })
         .unwrap();
 }
