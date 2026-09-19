@@ -123,8 +123,11 @@ replay does not repeat measurement callbacks. This validates the metadata
 boundary. Deferred document text now keeps its selection/search scope and
 finalizes its registry at native draw completion. The offscreen GPU test covers
 floating text outside parent bounds, nested documents, native selection,
-clipboard, and removal. Menu, connector, and selection-toolbar interaction cases
-still need their complete native component checks.
+clipboard, and removal. The selection-toolbar example now checks native double-click selection,
+current-frame placement after wrapping/font changes, button hit testing,
+clipboard, changed source, and clearing. Its position comes from the same GPUI
+text layout used to paint the selected text. Menu and connector cases remain
+open.
 
 React documents the browser measure/correct-before-paint pattern in [useLayoutEffect](https://react.dev/reference/react/useLayoutEffect). Keeping the hook's React execution order does not give this renderer a fresh synchronous native measurement API.
 

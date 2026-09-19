@@ -40,7 +40,10 @@ geometry includes the native root, draw, transaction, viewport, and scale.
 `deferred` elements and nested hosts. It is available during drawing, and absent
 from later commands and queries. Record bounds during paint; speculative layout
 is not proof that an element was painted. Cached paint replay does not run those
-callbacks again.
+callbacks again. Native views can read `Document::selected_range(key, text)` and
+`DocumentText::layout()` to build UI from the current native selection and GPUI
+layout. The [selection-toolbar example](./crates/gpui-react-controls/examples/selection_toolbar_visual.rs)
+checks placement in every draw while text width and font size change.
 [Count-update measurements](./docs/bridge-list-performance.md) compare the native
 list binding with direct GPUI and document the range-based height-index update.
 Native command errors do not undo earlier state changes. The host invalidates
@@ -61,8 +64,7 @@ window is destroyed. `Document` supplies native selection, clipboard, search,
 and painted text inspection across React and native component text. Ordinary
 GPUI deferred text keeps its document scope, including nested floating content.
 The registry and search counts are complete when the native draw returns.
-Its drag
-autoscroll uses the existing native list and container state. Inherited font
+Its drag autoscroll uses the existing native list and container state. Inherited font
 changes invalidate list measurements before layout. Broader consumer cases,
 performance work, and release distribution are in progress. The
 [external GPU component](./fixtures/bridge-gpu-component/README.md) uses the

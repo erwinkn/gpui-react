@@ -36,6 +36,7 @@ cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --exam
 cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example list_visual
 cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example document_visual
 cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example deferred_document_visual
+cargo run --manifest-path crates/gpui-react-controls/Cargo.toml --release --example selection_toolbar_visual
 cargo clippy --manifest-path crates/gpui-react-controls/Cargo.toml --release --all-targets -- -D warnings
 ```
 
@@ -116,3 +117,25 @@ The list reads inherited text metrics in its normal layout pass. A changed
 font, text size, line height, wrapping mode, or line clamp invalidates measured
 row heights before GPUI resolves the scroll anchor. The GPU regression changes
 an ancestor font and applies a negative row anchor in the same transaction.
+
+
+Native components can read `Document::selected_range(key, text)` before paint.
+It returns UTF-8 byte offsets from the native selection, or `None` if the key
+is not selected or those selected bytes no longer match the supplied text.
+Unselected bytes can change without invalidating that range. It does not compute
+layout or change the retained selection snapshot used by copy. JavaScript
+selection commands and reported ranges continue to use UTF-16 offsets.
+
+`DocumentText::layout()` exposes the underlying GPUI `TextLayout`. Clone the
+handle before moving the text into its parent, then read its positions after
+that text has completed prepaint. The clone shares GPUI's layout; it does not
+shape the text again. Reading positions before prepaint violates GPUI's API.
+
+The [selection-toolbar example](./examples/selection_toolbar_visual.rs) is a
+normal native view with a thin `ReactView` binding. A canvas after the text reads
+its current layout and defers an ordinary anchored button to the selected range's
+end. GPUI performs the toolbar layout and hit testing. The example checks every
+draw, including the first one after a width or font change. It also checks native
+double-click selection, button clicks, clipboard, changed source, and clearing.
+It saves `/tmp/bridge-selection-toolbar.png`. This is a worked native composition,
+not a new built-in React control or a general menu implementation.

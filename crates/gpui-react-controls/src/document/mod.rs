@@ -500,6 +500,18 @@ impl Document {
         }
         Ok(())
     }
+    /// The current native selection for one logical text, in UTF-8 byte offsets.
+    /// Returns None if the key is not selected or the selected bytes no longer
+    /// match `text`. This reads selection state; it does not compute layout.
+    pub fn selected_range(&self, key: &str, text: &str) -> Option<Range<usize>> {
+        let range = self.selection.wash_range(key)?;
+        let source = self
+            .selection
+            .spans()
+            .iter()
+            .find(|span| span.key.as_ref() == key)?;
+        (text.get(range.clone())? == source.text.get(range.clone())?).then_some(range)
+    }
     pub fn snapshot(&self) -> DocumentSnapshot {
         DocumentSnapshot {
             text: self
@@ -674,38 +686,28 @@ impl Document {
         }
         self.match_count += cached.matches.len();
         if options.selectable
-            && let Some(range) = self.selection.wash_range(&key)
+            && let Some(range) = self.selected_range(&key, &text)
         {
-            // Selection owns a snapshot. Only paint a wash when its selected
-            // bytes still match this live text; virtualized copy stays available.
-            let source = self
-                .selection
-                .spans()
-                .iter()
-                .find(|span| span.key == key)
-                .unwrap();
-            if text.get(range.clone()) == source.text.get(range.clone()) {
-                let rects = geometry
-                    .range_rects(range.clone())
-                    .into_iter()
-                    .map(|r| r.intersect(&clip))
-                    .filter(|r| r.size.width > px(0.) && r.size.height > px(0.))
-                    .collect::<Vec<_>>();
-                let color = self
-                    .props
-                    .selection_color
-                    .unwrap_or(Color(rgba(0x3875d799).into()))
-                    .0;
-                for rect in &rects {
-                    window.paint_quad(fill(*rect, color));
-                }
-                self.ranges.push(TextRange {
-                    key: key.to_string(),
-                    start: geometry::utf16(&text, range.start),
-                    end: geometry::utf16(&text, range.end),
-                    rects: rects.into_iter().map(Into::into).collect(),
-                });
+            let rects = geometry
+                .range_rects(range.clone())
+                .into_iter()
+                .map(|r| r.intersect(&clip))
+                .filter(|r| r.size.width > px(0.) && r.size.height > px(0.))
+                .collect::<Vec<_>>();
+            let color = self
+                .props
+                .selection_color
+                .unwrap_or(Color(rgba(0x3875d799).into()))
+                .0;
+            for rect in &rects {
+                window.paint_quad(fill(*rect, color));
             }
+            self.ranges.push(TextRange {
+                key: key.to_string(),
+                start: geometry::utf16(&text, range.start),
+                end: geometry::utf16(&text, range.end),
+                rects: rects.into_iter().map(Into::into).collect(),
+            });
         }
         self.entries.push(Entry {
             key,
@@ -941,6 +943,11 @@ pub fn document_text(key: impl Into<SharedString>, text: impl Into<SharedString>
     }
 }
 impl DocumentText {
+    /// GPUI's own layout handle. Clone it before moving this element into its
+    /// parent. Read positions only after this text has completed prepaint.
+    pub fn layout(&self) -> &TextLayout {
+        self.styled.layout()
+    }
     pub fn with_runs(mut self, runs: Vec<TextRun>) -> Self {
         self.styled = self.styled.with_runs(runs);
         self
@@ -1324,5 +1331,23 @@ mod tests {
             assert_eq!(doc.snapshot().match_count, 1);
         })
         .unwrap();
+    }
+
+    #[gpui::test]
+    fn native_selected_range_uses_bytes_and_rejects_changed_source(cx: &mut TestAppContext) {
+        let window = cx.add_window(|_, cx| Document::new(DocumentProps::default(), cx));
+        window
+            .update(cx, |doc, _, _| {
+                doc.selection
+                    .begin_with_span(&"key".into(), &"a😀b".into(), 1..5);
+                assert_eq!(doc.selected_range("key", "a😀b"), Some(1..5));
+                assert_eq!(doc.selected_range("key", "z😀b"), Some(1..5));
+                assert_eq!(doc.selected_range("other", "a😀b"), None);
+                assert_eq!(doc.selected_range("key", "axxxx"), None);
+                assert_eq!(doc.selected_range("key", "a"), None);
+                doc.selection.clear();
+                assert_eq!(doc.selected_range("key", "a😀b"), None);
+            })
+            .unwrap();
     }
 }

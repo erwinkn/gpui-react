@@ -562,3 +562,18 @@ All five direct GPUI deferred/completion tests pass, including cached paint
 reuse without repeated completion callbacks. The 16-test core binding suite
 also passes against this GPUI change. The completion hook adds 20 lines of
 production GPUI code; the rest of that patch is API documentation and tests.
+
+### Native selection geometry composition
+
+| Decision | Alternative | Confidence | Failure case |
+| --- | --- | --- | --- |
+| Expose GPUI's shared text-layout handle and the document's current selected byte range to native views. | Return a second prepared layout model or require JS to position the toolbar from a query. | High | Positions are valid only after the corresponding text has completed prepaint. The native example reads them in a later sibling's prepaint and lets GPUI lay out and hit-test the anchored button. |
+| Validate the selected bytes against the supplied current text, using the same helper for selection paint. | Return a retained range even if its source changed. | High | The old range can land on unrelated bytes after a source replacement. The unit test covers Unicode byte offsets, changed and shorter source, a different key, and clear. Copy still retains its independent selection snapshot. |
+| Keep the toolbar in an example native composition with ordinary views and bridge traits. | Add a new built-in React toolbar API while its application contract is still unspecified. | High | This proves the native escape path, not a complete menu library. The sample has a copy button and uses left-aligned text. |
+| Verify the geometry on every draw and compare it with the painted selection rectangles. | Check only the final screenshot after several draws. | High | A delayed position could appear correct after a second draw. Per-draw checks cover frame identity and wrapping/font changes; native pointer and clipboard checks verify the button remains usable. |
+
+All 50 control tests, strict all-target control Clippy, the new offscreen toolbar
+example, and the existing document GPU suite pass. The saved toolbar image was
+inspected. The example keeps the window off screen. No GPUI change was needed.
+I stand behind these two small native APIs and the composition test. Menu and
+connector cases, broader performance evidence, and distribution remain open.
