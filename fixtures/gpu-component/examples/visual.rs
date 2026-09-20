@@ -1,5 +1,5 @@
 #[allow(dead_code)]
-#[path = "../../../crates/gpui-react/examples/support/mod.rs"]
+#[path = "../../../crates/gpui-react-kit/examples/support/mod.rs"]
 mod support;
 use gpui::{Entity, Modifiers, point, px};
 use gpui_react_texture_example::TextureView;

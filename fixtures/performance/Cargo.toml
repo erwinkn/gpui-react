@@ -12,6 +12,7 @@ scene-checks = ["gpui/test-support", "gpui_macos/test-support"]
 gpui = { workspace = true }
 gpui_macos = { workspace = true }
 gpui-react = { path = "../../crates/gpui-react" }
+gpui-react-kit = { path = "../../crates/gpui-react-kit" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

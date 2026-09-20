@@ -2,7 +2,7 @@
 // wires, for the native fixture and tests: <dir>/mount-<scene>-<rows>.{json,bin}.
 // Args: dir rows scene. Env: BRIDGE_SCHEMA (default /tmp/gpui-react-wire/schema.json).
 import { createRoot, type KindSchema, type Transport, type NativeEvent, type TransactionReply } from "@gpui-react/core"
-import { Container, Document, List, Text } from "@gpui-react/core"
+import { Container, Document, List, Text } from "@gpui-react/kit"
 import assert from "node:assert/strict"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"

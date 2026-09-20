@@ -14,6 +14,7 @@ interaction-tests = ["dep:gpui", "dep:gpui_macos"]
 gpui = { workspace = true, optional = true, features = ["test-support"] }
 gpui_macos = { workspace = true, optional = true, features = ["test-support"] }
 gpui-react = { path = "../../crates/gpui-react" }
+gpui-react-kit = { path = "../../crates/gpui-react-kit" }
 gpui-react-runtime = { path = "../../crates/gpui-react-runtime" }
 gpui-react-texture-example = { path = "../gpu-component" }
 serde = { workspace = true }

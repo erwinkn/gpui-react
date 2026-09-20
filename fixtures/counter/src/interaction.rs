@@ -1,11 +1,7 @@
 //! Test-only native driver. No input synthesis or shared test flags enter the bridge crates.
 use anyhow::{Result, ensure};
 use gpui::{prelude::*, *};
-// GPUI's `InputEvent` trait and the bridge's `InputEvent` enum share a name now
-// that the controls live in `gpui-react`; name GPUI's explicitly for
-// `to_platform_input`.
-use gpui::InputEvent;
-use gpui_react::{Input, VirtualList};
+use gpui_react_kit::{Input, VirtualList};
 use gpui_react_runtime::gpui_react::*;
 use gpui_react_texture_example::{TextureCommand, TextureView};
 use serde::Deserialize;
@@ -206,7 +202,7 @@ fn capture(cx: &mut AsyncWindowContext, name: &str) -> Result<()> {
 }
 fn texture_pixel(
     cx: &mut AsyncWindowContext,
-    bounds: &gpui_react::geometry::Rect,
+    bounds: &gpui_react_kit::geometry::Rect,
 ) -> Result<[u8; 4]> {
     stalled()?;
     let scale = cx.update(|window, _| window.scale_factor())?;

@@ -147,7 +147,7 @@ impl Engine {
             })),
             "bridge" | "binary" => {
                 let mut registry = Registry::default();
-                gpui_react::register_builtins(&mut registry).unwrap();
+                gpui_react_kit::register_kit(&mut registry).unwrap();
                 let host = cx.new(|_| Host::new(registry, Arc::new(|_| {})));
                 let binary = mode == "binary";
                 let started = Instant::now();
@@ -337,7 +337,7 @@ fn main() {
         // The controls' kind table as JSON, for worker-side tools that encode
         // the binary wire without a native session.
         let mut registry = Registry::default();
-        gpui_react::register_builtins(&mut registry).unwrap();
+        gpui_react_kit::register_kit(&mut registry).unwrap();
         println!("{}", serde_json::to_string(&registry.schema()).unwrap());
         return;
     }
