@@ -10,6 +10,7 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 gpui-react = { path = "../gpui-react" }
+gpui-react-kit = { path = "../gpui-react-kit" }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
