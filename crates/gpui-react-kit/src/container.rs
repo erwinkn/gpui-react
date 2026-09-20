@@ -1,9 +1,9 @@
 use crate::{
-    SharedStyle,
+    SharedStyle, Style,
     geometry::{Offset, Painted},
 };
 use gpui::{prelude::*, *};
-use gpui_react::{ElementCommands, ElementContext, ElementQueries, ReactElement, RenderContext};
+use gpui_react::{ElementCommands, ElementContext, ElementQueries, ReactElement, RenderContext, Shared};
 use serde::{Deserialize, Serialize};
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ pub enum Scroll {
 #[derive(Debug, Default, Deserialize, gpui_react::ComponentProps)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContainerProps {
-    pub style: SharedStyle,
+    pub style: Shared<Style>,
     pub scroll: Scroll,
     pub focusable: bool,
     pub label: String,

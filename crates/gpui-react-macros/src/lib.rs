@@ -148,7 +148,7 @@ fn wire_type(ty: &Type) -> (&'static str, bool) {
         "f32" => ("F32", false),
         "f64" => ("F64", false),
         "String" | "SharedString" | "str" | "Cow" | "PathBuf" => ("Str", false),
-        "SharedStyle" | "ControlStyle" => ("Style", false),
+        "Shared" => ("Style", false),
         _ => ("Value", false),
     }
 }

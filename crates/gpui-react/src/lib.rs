@@ -5,34 +5,13 @@
 //! native state (inputs, lists, custom components) are ordinary GPUI entities
 //! listed in that tree. No JavaScript runtime or second native tree exists.
 
-// The built-in controls moved into this crate from `gpui-react-controls`.
-// They refer to the bridge through the `gpui_react::` path, and the props
-// derive defaults to `::gpui_react`; this alias keeps both working in-crate.
-extern crate self as gpui_react;
-
 mod decode;
 mod frame;
 mod host;
 pub mod protocol;
 mod registry;
+mod shared;
 pub mod wire;
-pub mod style;
-
-pub mod container;
-pub mod document;
-pub mod geometry;
-pub mod input;
-pub mod list;
-pub mod text;
-
-pub use container::{Container, ContainerProps};
-pub use document::{
-    Document, DocumentCommand, DocumentEvent, DocumentProps, DocumentSnapshot, TextKey,
-    document_text,
-};
-pub use input::{Input, InputCommand, InputEvent, InputProps, InputSnapshot};
-pub use list::{ListCommand, ListEvent, ListProps, ListSnapshot, VirtualList};
-pub use text::{Text, TextProps};
 
 pub use decode::Decoder;
 pub use frame::{FrameInfo, current_frame};
@@ -42,7 +21,7 @@ pub use registry::{
     Capabilities, Component, Emission, Emitter, EventSink, HostElement, KindSchema, Prepared,
     Registry,
 };
-pub use style::{Color, Length, SharedStyle, Style};
+pub use shared::{Shared, SharedDefinition};
 pub use gpui_react_macros::ComponentProps;
 pub use wire::{Field, Schema, WireType};
 
@@ -145,79 +124,4 @@ pub trait ElementQueries: ReactElement {
         extras: &mut Self::Extras,
         cx: &mut ElementContext,
     ) -> anyhow::Result<Self::Reply>;
-}
-
-/// Registers the five built-in controls with a registry: `input`, `container`,
-/// `text`, `list`, and `document`. A runtime and every custom composition call
-/// this before registering their own components.
-pub fn register_builtins(registry: &mut Registry) -> anyhow::Result<()> {
-    registry.register(
-        Component::<Document>::new("document")
-            .children()
-            .events()
-            .commands()
-            .queries(),
-    )?;
-    registry.register(
-        Component::<VirtualList>::new("list")
-            .children()
-            .events()
-            .commands()
-            .queries(),
-    )?;
-    registry.register(
-        HostElement::<Container>::new("container")
-            .children()
-            .events()
-            .commands()
-            .queries(),
-    )?;
-    registry.register(HostElement::<Text>::new("text").queries())?;
-    registry.register(
-        Component::<Input>::new("input")
-            .events()
-            .commands()
-            .queries(),
-    )
-}
-
-#[cfg(test)]
-mod builtin_schema {
-    /// Every control's derived wire schema must match its serde derive.
-    #[test]
-    fn schemas_match_serde() {
-        let mut registry = crate::Registry::default();
-        super::register_builtins(&mut registry).unwrap();
-        registry.verify_schemas().unwrap();
-        let schema = registry.schema();
-        assert_eq!(
-            schema.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(),
-            ["document", "list", "container", "text", "input"]
-        );
-        let text = &schema[3];
-        let crate::Schema::Fields(fields) = text.fields else {
-            panic!("text has a positional schema")
-        };
-        assert_eq!(
-            fields.iter().map(|f| f.name).collect::<Vec<_>>(),
-            [
-                "text",
-                "style",
-                "textKey",
-                "selectable",
-                "searchable",
-                "matchIndexOffset",
-                "measure"
-            ]
-        );
-        assert!(fields.iter().all(|f| !f.required), "every text prop has a default");
-        assert_eq!(fields[1].kind, crate::WireType::Style);
-        assert_eq!(fields[5].kind, crate::WireType::U32);
-        let json = serde_json::to_value(&schema).unwrap();
-        assert_eq!(
-            json[3]["fields"][0],
-            serde_json::json!({ "name": "text", "type": "str", "required": false })
-        );
-        assert_eq!(json[3]["capabilities"]["queries"], true);
-    }
 }

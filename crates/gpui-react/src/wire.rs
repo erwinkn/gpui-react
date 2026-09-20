@@ -355,9 +355,19 @@ fn serde_fields<T: serde::de::DeserializeOwned>() -> Option<Vec<&'static str>> {
 #[cfg(test)]
 mod schema_tests {
     use super::{Field, Schema, ComponentProps, WireType, verify};
-    use crate::style::SharedStyle;
+    use crate::{Shared, SharedDefinition};
     use gpui::SharedString;
     use serde::Deserialize;
+    use std::sync::{Arc, LazyLock};
+
+    #[derive(Default, Deserialize)]
+    struct Style;
+    impl SharedDefinition for Style {
+        fn default_shared() -> Arc<Self> {
+            static DEFAULT: LazyLock<Arc<Style>> = LazyLock::new(Arc::default);
+            DEFAULT.clone()
+        }
+    }
 
     #[derive(Deserialize, gpui_react_macros::ComponentProps)]
     #[wire(crate = "crate")]
@@ -371,7 +381,7 @@ mod schema_tests {
         wide: f64,
         text: String,
         shared: SharedString,
-        style: SharedStyle,
+        style: Shared<Style>,
         maybe_text: Option<String>,
         #[serde(default)]
         defaulted: u32,
@@ -535,13 +545,23 @@ impl<'de> de::Deserializer<'de> for FieldReader<'_, 'de> {
 #[cfg(test)]
 mod field_tests {
     use super::*;
-    use crate::style::{STYLES, SharedStyle, Style};
+    use crate::{Shared, SharedDefinition, shared};
     use serde::Deserialize;
+    use std::sync::{Arc, LazyLock};
+
+    #[derive(Debug, Default, Deserialize)]
+    struct Style;
+    impl SharedDefinition for Style {
+        fn default_shared() -> Arc<Self> {
+            static DEFAULT: LazyLock<Arc<Style>> = LazyLock::new(Arc::default);
+            DEFAULT.clone()
+        }
+    }
 
     #[derive(Default, Deserialize, Debug)]
     #[serde(default, rename_all = "camelCase")]
     struct Doc {
-        style: SharedStyle,
+        style: Shared<Style>,
         search: Option<serde_json::Value>,
     }
     const FIELDS: &[Field] = &[
@@ -551,13 +571,15 @@ mod field_tests {
 
     #[test]
     fn positional_style_id_resolves() {
-        STYLES.with(|s| s.borrow_mut().push(Some(std::sync::Arc::new(Style::default()))));
+        let mut table = vec![Some(Arc::new(Style) as shared::Erased)];
         // mask 0b01, style id 0, then the trailer: key count 0, table offset.
         let bytes = [1u8, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0];
         let mut reader = Reader::new(&bytes).unwrap();
-        let doc = Doc::deserialize(PropsReader { reader: &mut reader, fields: FIELDS }).unwrap();
+        let doc = shared::with_table(&mut table, || {
+            Doc::deserialize(PropsReader { reader: &mut reader, fields: FIELDS }).unwrap()
+        });
         assert!(doc.search.is_none());
         assert!(reader.finished());
-        let _ = doc.style;
+        assert!(Arc::ptr_eq(doc.style.as_arc(), &table[0].clone().unwrap().downcast::<Style>().unwrap()));
     }
 }

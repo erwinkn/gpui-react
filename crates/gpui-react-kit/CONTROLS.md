@@ -2,8 +2,8 @@
 
 This crate contains the standard controls. `Container` and `Text` are host-owned
 data rendered into ordinary
-GPUI elements each frame; equal styles share one value per app through
-`shared_style`. `VirtualList`, `Document`, and `Input` are ordinary GPUI
+GPUI elements each frame; equal styles share one value per session through
+`Shared<Style>`. `VirtualList`, `Document`, and `Input` are ordinary GPUI
 entities. One input entity owns its text, selection,
 composition, undo history, scroll position, and caret. GPUI computes its layout
 and handles keyboard, mouse, clipboard, and platform input-method operations.
@@ -15,11 +15,12 @@ The React binding implements the standard optional bridge traits; it does not
 replace the control's `Render` implementation.
 
 The default composition in `gpui-react-runtime` always calls
-`gpui_react::register_builtins(registry)` before its own registrations; a
-composition that builds its own registry calls it the same way. This registers
-`input`, `container`, `text`, `list`, and `document` with their supported capabilities.
-Import its wrappers from `@gpui-react/core`. See the
-[JavaScript contract](../../packages/core/CONTROLS.md) for every prop,
+`gpui_react_kit::register_kit(registry)` before its own registrations; a
+composition that builds its own registry calls it the same way. This declares
+`Style` as the session's shared value type and registers `document`, `list`,
+`container`, `text`, and `input` with their supported capabilities.
+Import its wrappers from `@gpui-react/kit`. See the
+[JavaScript contract](../../packages/kit/CONTROLS.md) for every prop,
 event, command, and style field.
 
 Input editing behavior was extracted from the existing native editor after its
@@ -35,16 +36,16 @@ accessibility values, scroll consumption, ancestor callbacks, and boundary
 chaining. It saves `/tmp/bridge-input.png`.
 
 ```sh
-cargo test --manifest-path crates/gpui-react/Cargo.toml --release
-cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example input_visual
-cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example container_visual
-cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example list_visual
-cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example document_visual
-cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example deferred_document_visual
-cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example selection_toolbar_visual
-cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example geometry_visual
-cargo run --manifest-path crates/gpui-react/Cargo.toml --release --example modal_visual
-cargo clippy --manifest-path crates/gpui-react/Cargo.toml --release --all-targets -- -D warnings
+cargo test --manifest-path crates/gpui-react-kit/Cargo.toml --release
+cargo run --manifest-path crates/gpui-react-kit/Cargo.toml --release --example input_visual
+cargo run --manifest-path crates/gpui-react-kit/Cargo.toml --release --example container_visual
+cargo run --manifest-path crates/gpui-react-kit/Cargo.toml --release --example list_visual
+cargo run --manifest-path crates/gpui-react-kit/Cargo.toml --release --example document_visual
+cargo run --manifest-path crates/gpui-react-kit/Cargo.toml --release --example deferred_document_visual
+cargo run --manifest-path crates/gpui-react-kit/Cargo.toml --release --example selection_toolbar_visual
+cargo run --manifest-path crates/gpui-react-kit/Cargo.toml --release --example geometry_visual
+cargo run --manifest-path crates/gpui-react-kit/Cargo.toml --release --example modal_visual
+cargo clippy --manifest-path crates/gpui-react-kit/Cargo.toml --release --all-targets -- -D warnings
 ```
 
 The GPU test is currently macOS-only. It does not measure physical display
@@ -66,7 +67,7 @@ inside the document, including across virtual row remounts. The helper uses
 GPUI `StyledText` and its shaped line layouts. It performs no second text layout.
 
 ```rust
-use gpui_react::document_text;
+use gpui_react_kit::document_text;
 
 // In an ordinary GPUI Render implementation:
 div().child(document_text("message-42/body", "Hello reader"))

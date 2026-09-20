@@ -1,12 +1,9 @@
-//! Typed style props shared by every control. A `SharedStyle` is one `Arc`
+//! Typed style props shared by every control. A `Shared<Style>` is one `Arc`
 //! per node; equal styles are defined once on the wire and referenced by id.
 use gpui::px;
+use gpui_react::{Shared, SharedDefinition};
 use serde::{Deserialize, Deserializer};
-use std::{
-    cell::RefCell,
-    ops::Deref,
-    sync::{Arc, LazyLock},
-};
+use std::sync::{Arc, LazyLock};
 
 /// A CSS color parsed once when props enter Rust.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -109,70 +106,15 @@ pub struct Style {
 
 static DEFAULT_STYLE: LazyLock<Arc<Style>> = LazyLock::new(|| Arc::new(Style::default()));
 
-thread_local! {
-    /// The decoding session's style definitions, installed by `Decoder::parse`
-    /// for the duration of one transaction.
-    pub(crate) static STYLES: RefCell<Vec<Option<Arc<Style>>>> = const { RefCell::new(Vec::new()) };
+impl SharedDefinition for Style {
+    fn default_shared() -> Arc<Self> {
+        DEFAULT_STYLE.clone()
+    }
 }
 
-/// A style value shared between every node that declared it. On the wire a
-/// style is either a number, the id of a definition sent earlier in the
-/// session, or an inline object, which is accepted for tests and native
-/// callers and allocated on its own.
-#[derive(Clone, Debug)]
-pub struct SharedStyle(Arc<Style>);
-
-impl SharedStyle {
-    pub fn new(style: Style) -> Self {
-        Self(Arc::new(style))
-    }
-    pub fn as_arc(&self) -> &Arc<Style> {
-        &self.0
-    }
-}
-impl Default for SharedStyle {
-    fn default() -> Self {
-        Self(DEFAULT_STYLE.clone())
-    }
-}
-impl Deref for SharedStyle {
-    type Target = Style;
-    fn deref(&self) -> &Style {
-        &self.0
-    }
-}
-impl PartialEq for SharedStyle {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || *self.0 == *other.0
-    }
-}
-impl From<Style> for SharedStyle {
-    fn from(style: Style) -> Self {
-        Self::new(style)
-    }
-}
-impl<'de> Deserialize<'de> for SharedStyle {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        #[allow(clippy::large_enum_variant)] // transient, one per decoded prop
-        enum Wire {
-            Id(u32),
-            Inline(Style),
-        }
-        match Wire::deserialize(d)? {
-            Wire::Inline(style) => Ok(Self::new(style)),
-            Wire::Id(id) => STYLES.with(|styles| {
-                styles
-                    .borrow()
-                    .get(id as usize)
-                    .and_then(|slot| slot.clone())
-                    .map(Self)
-                    .ok_or_else(|| serde::de::Error::custom(format!("unknown style {id}")))
-            }),
-        }
-    }
-}
+/// A style shared between every node that declared it. Props structs spell
+/// it `Shared<Style>` so the `ComponentProps` derive sees the shared field.
+pub type SharedStyle = Shared<Style>;
 
 impl Style {
     /// Whether the style needs GPUI element state (hover, active, or focus).

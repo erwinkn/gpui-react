@@ -22,8 +22,8 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 use web_time::Instant;
 
-use crate::style::{Color, SharedStyle as ControlStyle};
-use gpui_react::{ReactCommands, ReactEvents, ReactQueries, ReactView};
+use crate::style::{Color, SharedStyle as ControlStyle, Style as ControlStyleDefinition};
+use gpui_react::{ReactCommands, ReactEvents, ReactQueries, ReactView, Shared};
 use serde::{Deserialize, Serialize};
 
 actions!(
@@ -1680,7 +1680,7 @@ pub struct InputProps {
     pub submit_on_enter: bool,
     /// Native key interception, for example while an autocomplete menu is open.
     pub capture_keys: Vec<String>,
-    pub style: ControlStyle,
+    pub style: Shared<ControlStyleDefinition>,
     pub caret_color: Option<Color>,
     pub selection_color: Option<Color>,
 }

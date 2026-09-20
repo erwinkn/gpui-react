@@ -1439,17 +1439,12 @@ name = "gpui-react"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "csscolorparser",
  "gpui",
  "gpui-react-macros",
  "gpui_macos",
- "regex",
  "rustc-hash",
  "serde",
  "serde_json",
- "smallvec",
- "unicode-segmentation",
- "web-time",
 ]
 
 [[package]]
@@ -1459,6 +1454,7 @@ dependencies = [
  "anyhow",
  "gpui",
  "gpui-react",
+ "gpui-react-kit",
  "gpui-react-runtime",
  "gpui-react-texture-example",
  "gpui_macos",
@@ -1476,9 +1472,29 @@ dependencies = [
  "anyhow",
  "gpui",
  "gpui-react",
+ "gpui-react-kit",
  "gpui_macos",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "gpui-react-kit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "csscolorparser",
+ "gpui",
+ "gpui-react",
+ "gpui-react-macros",
+ "gpui_macos",
+ "regex",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "unicode-segmentation",
+ "web-time",
 ]
 
 [[package]]
@@ -1497,6 +1513,7 @@ dependencies = [
  "anyhow",
  "futures",
  "gpui-react",
+ "gpui-react-kit",
  "gpui_macos",
  "napi",
  "napi-build",
@@ -1514,6 +1531,7 @@ dependencies = [
  "anyhow",
  "gpui",
  "gpui-react",
+ "gpui-react-kit",
  "gpui_macos",
  "metal",
  "serde",

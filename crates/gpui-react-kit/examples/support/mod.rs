@@ -25,7 +25,7 @@ impl Harness {
     ) -> Self {
         let mut cx = VisualTestAppContext::new(Rc::new(gpui_macos::MacPlatform::new(false)));
         let mut registry = gpui_react::Registry::default();
-        gpui_react::register_builtins(&mut registry).unwrap();
+        gpui_react_kit::register_kit(&mut registry).unwrap();
         register(&mut registry);
         let events = Arc::new(Mutex::new(Vec::new()));
         let sink = events.clone();

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "crates/gpui-react",
   "crates/gpui-react-macros",
+  "crates/gpui-react-kit",
   "crates/gpui-react-runtime",
   "fixtures/counter",
   "fixtures/gpu-component",

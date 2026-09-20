@@ -1,0 +1,24 @@
+[package]
+name = "gpui-react-kit"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "The standard controls for gpui-react: Container, Text, VirtualList, Document, Input, and Style"
+
+[dependencies]
+gpui = { workspace = true }
+gpui-react = { path = "../gpui-react" }
+gpui-react-macros = { path = "../gpui-react-macros" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+rustc-hash = { workspace = true }
+csscolorparser = { workspace = true }
+unicode-segmentation = "1"
+web-time = "1"
+regex = "1"
+smallvec = "1"
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+gpui_macos = { workspace = true, features = ["test-support"] }
