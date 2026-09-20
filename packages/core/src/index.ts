@@ -5,7 +5,6 @@ import type { KindSchema, NativeEvent, NativeRef, TransactionReply, Transport } 
 import { BinaryEncoder, JsonEncoder, validate, type Encoded, type Encoder } from "./wire.js"
 export type { FrameInfo, KindSchema, NativeEvent, NativeRef, Operation, Transaction, TransactionReply, Transport, WireField, WireType } from "./protocol.js"
 export { decodeWire } from "./wire.js"
-export * from "./controls.js"
 
 export function nativeComponent<Props extends object, Event = never, Command = unknown, Query = unknown, Reply = unknown>(name: string) {
   if (!/^[a-z0-9-]+$/.test(name)) throw Error("Invalid native component name")
@@ -24,6 +23,8 @@ interface Options {
   wire?: "json" | "binary"
   /** Binary wire: check integers and finite floats before writing. On by default; the cost is within noise. */
   wireChecks?: boolean
+  /** The native kind that renders string children, as `{ text }`. Defaults to `"text"`. */
+  textKind?: string
 }
 type Props = Record<string, any>
 type PendingCall = { resolve: (value: any) => void; reject: (error: Error) => void }
@@ -73,6 +74,7 @@ export class BridgeRoot {
   /** Kind index by component name, when the transport supplied a schema. */
   readonly kinds: ReadonlyMap<string, number> | null
   readonly wire: "json" | "binary"
+  readonly textKind: string
   /** Commit hooks record through this after `ready()`. */
   readonly encoder: Encoder
 
@@ -80,6 +82,7 @@ export class BridgeRoot {
     if (attached.has(transport)) throw Error("Transport already has a React root")
     this.kinds = options.schema ? new Map(options.schema.map((kind, index) => [kind.name, index])) : null
     this.wire = options.wire ?? "json"
+    this.textKind = options.textKind ?? "text"
     if (this.wire !== "json" && !options.schema) throw Error("The binary wire needs the native component schema")
     const styleId = (style: object) => this.styleId(style)
     this.encoder = this.wire === "binary" ? new BinaryEncoder(options.schema!, styleId, options.wireChecks ?? true) : new JsonEncoder(styleId)
@@ -231,6 +234,14 @@ export class BridgeRoot {
     return { id: 0, component, kind, props, root: this, initial: [], mounted: false, subscription: null, public: null }
   }
 
+  /** A string child becomes a node of the root's `textKind`. */
+  textHost(text: string): Host {
+    if (this.kinds && !this.kinds.has(this.textKind)) {
+      throw Error(`String children need a native kind ${JSON.stringify(this.textKind)}, which the schema does not have; pass the kind that renders text as the textKind root option`)
+    }
+    return this.host(this.textKind, { text })
+  }
+
   /** The ref object, created on first request so unreferenced nodes pay nothing. */
   publicInstance(host: Host): NativeRef {
     if (host.public) return host.public
@@ -335,7 +346,7 @@ const config = {
   supportsMutation: true, supportsPersistence: false, supportsHydration: false,
   isPrimaryRenderer: true, supportsMicrotasks: true, scheduleMicrotask: queueMicrotask,
   createInstance: (type: string, props: Props, root: BridgeRoot) => root.host(type, props),
-  createTextInstance: (text: string, root: BridgeRoot) => root.host("text", { text }),
+  createTextInstance: (text: string, root: BridgeRoot) => root.textHost(text),
   appendInitialChild: (parent: Host, child: Host) => { parent.initial.push(child) },
   appendChild: place, appendChildToContainer: place,
   insertBefore: place, insertInContainerBefore: place,
