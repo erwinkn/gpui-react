@@ -2,12 +2,12 @@
 
 This is the React reconciler for GPUI. It includes an explicit macOS/Bun
 native host connection and can wrap ordinary GPUI views from a compiled
-composition. The package also exports the typed wrappers for the five built-in
-controls; their full prop, event, command, and style contract is in
-[CONTROLS.md](./CONTROLS.md). Standard controls and the default
-`@gpui-react/runtime` package
-are available in this repository. Release publication and broader performance
-checks remain in progress.
+composition. It knows no control names: the typed wrappers for the five
+standard controls are in [`@gpui-react/kit`](../kit/README.md), and their full
+prop, event, command, and style contract is in
+[`packages/kit/CONTROLS.md`](../kit/CONTROLS.md). The default
+`@gpui-react/runtime` package composes the engine with the kit. Release
+publication and broader performance checks remain in progress.
 
 ```tsx
 import { createRoot, nativeComponent } from '@gpui-react/core'
@@ -29,7 +29,10 @@ and query types can be supplied through the additional generic parameters.
 The wrapper returns `ReactElement`; its native props do not inherit DOM
 attribute or CSS type constraints.
 
-`createRoot(transport, options?)` binds a session to one root. `render` schedules
+`createRoot(transport, options?)` binds a session to one root. `textKind`
+(default `"text"`) names the native kind that renders a string or number
+child as `{ text }` props; with a `schema` present and no such kind, the first
+string child fails the root with an error that names the option. `render` schedules
 React work. `renderSync` flushes React only; it does not wait for native work.
 `flush` waits for the already collected native transactions, not a future React
 render or native presentation. `unmount` commits removal, awaits application,
@@ -97,8 +100,8 @@ platform, and installed-package checks are documented in the repository README.
 Select one compiled composition explicitly in both entry files:
 
 For the standard controls, use `import bindings from '@gpui-react/runtime'`
-in both files. Install matching versions of `@gpui-react/core` and
-`@gpui-react/runtime`. A custom
+in both files and import the wrappers from `@gpui-react/kit`. Install matching
+versions of `@gpui-react/core`, `@gpui-react/kit`, and `@gpui-react/runtime`. A custom
 composition uses the literal native path shown below instead. The default
 runtime has no browser driver. It supports macOS arm64 with Bun.
 

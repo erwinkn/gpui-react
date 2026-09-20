@@ -1,10 +1,14 @@
 # React bindings for GPUI
 
-This crate provides the core host data structures, element rebuilding, and the
-five built-in native controls for the bridge. It depends on GPUI, Serde, and
-anyhow. [`gpui-react-runtime`](../gpui-react-runtime/README.md) supplies the
-native loop, the N-API worker transport, and the default composition. The
-controls are documented in [CONTROLS.md](./CONTROLS.md).
+This crate is the engine: the host data structures, element rebuilding, the
+transaction decoder, the component registry, the wire, and the component
+traits. It registers no component kinds and depends on GPUI, Serde, and
+anyhow. [`gpui-react-kit`](../gpui-react-kit/README.md) supplies the five
+standard controls and their `Style`;
+[`gpui-react-runtime`](../gpui-react-runtime/README.md) supplies the native
+loop, the N-API worker transport, and the default composition of engine and
+kit. An application that wants none of the standard controls builds its own
+`Registry` against this crate alone.
 
 ## One host, one tree
 
@@ -77,11 +81,16 @@ borrows each props value as a slice of the input, resolves component names to
 registry indices without allocating, and decodes each slice into the
 component's typed props with static serde as soon as it is read; no value tree
 exists. A single pass through type erasure was measured slower, because it
-boxes intermediate values. Style objects are defined once on the wire and
+boxes intermediate values. Shared values are defined once on the wire and
 referenced by id; the decoder owns those definitions for its session, so a
-`SharedStyle` prop already holds its shared value when it reaches the UI
-thread, and style operations never cross to the UI. In the native host the
-decoder runs on the application worker; the UI thread parses no JSON.
+`Shared<T>` prop already holds its `Arc<T>` when it reaches the UI thread, and
+definition operations never cross to the UI. The engine does not know `T`: the
+registry declares the session's one shared definition type with
+`registry.shared::<T>()`, where `T: Deserialize + SharedDefinition` supplies
+the default value a `Shared<T>` field falls back to. The wire spells the
+operations `style` and `dropStyle` and the schema type `WireType::Style`,
+after their one use today. In the native host the decoder runs on the
+application worker; the UI thread parses no JSON.
 
 Host ids are `u32` and dense: the reconciler reuses an id once the transaction
 that removed its node has been acknowledged, so the host stores nodes in a
@@ -124,7 +133,7 @@ deferred elements and nested hosts. It returns `None` outside that draw scope.
 Record measurements during paint; earlier phases do not prove that an element
 will be painted, and replayed paint does not run callbacks again. These records
 identify native draw work, not physical presentation. Recording geometry costs
-a paint callback per node per frame, so the standard controls make it opt-in.
+a paint callback per node per frame, so the kit's controls make it opt-in.
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
@@ -134,7 +143,8 @@ CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
 ```
 
 The tests use GPUI's test application and real entity and subscription
-machinery. They cover registration, typed events, effect-ordered callback
-replacement, removal, hidden branches, invalid operations, element children,
-change notification to the nearest view, and frame scopes through nested and
-deferred hosts.
+machinery with kinds defined locally. They cover registration, typed events,
+effect-ordered callback replacement, removal, hidden branches, invalid
+operations, element children, change notification to the nearest view, shared
+value definition and resolution, and frame scopes through nested and deferred
+hosts.

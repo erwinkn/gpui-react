@@ -1,11 +1,12 @@
 # Default bridge runtime
 
-This package provides the native host and standard controls for `@gpui-react/core`.
-The tested target is macOS arm64 with Bun. The window starts inactive. The
-runtime contains no Cherry, Pierre, GPU effect, or test-only components.
+This package provides the native host for `@gpui-react/core` composed with the
+standard controls of `@gpui-react/kit`. The tested target is macOS arm64 with
+Bun. The window starts inactive. The runtime contains no Cherry, Pierre, GPU
+effect, or test-only components.
 
-Install matching versions of `@gpui-react/core` and `@gpui-react/runtime`, plus
-React 19.2. Use the release archives listed in the
+Install matching versions of `@gpui-react/core`, `@gpui-react/kit`, and
+`@gpui-react/runtime`, plus React 19.2. Use the release archives listed in the
 framework release manifest until these packages have an npm release.
 
 ```ts
@@ -21,7 +22,7 @@ await runApplication(bindings, new URL("./worker.tsx", import.meta.url), {
 // worker.tsx
 import bindings from "@gpui-react/runtime"
 import { attachApplication } from "@gpui-react/core/application"
-import { Container, Input, Text } from "@gpui-react/core"
+import { Container, Input, Text } from "@gpui-react/kit"
 
 const root = attachApplication(bindings)
 root.render(<Container style={{ padding: 16, gap: 12 }}>
@@ -44,7 +45,7 @@ The bridge verifies the native protocol before it starts an application.
 To add a native component, build a composition that registers it with
 `gpui-react-runtime`. Pass that composition to the same launcher and worker helpers
 in place of this package. Do not load two compositions into one application.
-See the [composition guide](https://github.com/erwinkn/gpui-react/blob/bridge/minimal-react-gpui/crates/gpui-react-runtime/README.md).
+See the [composition guide](../../crates/gpui-react-runtime/README.md).
 
 The browser export fails explicitly. The bridge currently supports desktop
 rendering and includes no browser driver.

@@ -18,37 +18,59 @@ React (Worker Thread)  -->  Typed Transactions  -->  Host Entity (Main UI Thread
 
 ### Rust Crates (`crates/`)
 
-- `crates/gpui-react`: Core bridge crate and the five standard native controls (`Document`, `VirtualList`, `Container`, `Text`, `Input`). Provides the `Host` entity, dense node storage, transaction decoding, frame metadata (`current_frame`), the component traits (`ReactView`, `ReactElement`, `ReactEvents`, `ReactCommands`, `ReactQueries`, `ReactChildren`), style parsing, and `register_builtins`.
+- `crates/gpui-react`: The engine. Provides the `Host` entity, dense node storage, transaction decoding (`Decoder`), the component `Registry`, the wire and protocol types, frame metadata (`current_frame`), the component traits (`ReactView`, `ReactElement`, `ReactEvents`, `ReactCommands`, `ReactQueries`, `ReactChildren`), and the generic `Shared<T>` interned value. It registers no component kinds and has no opinion about styling, events, or text.
 - `crates/gpui-react-macros`: `ComponentProps` derive macro for props wire schemas.
-- `crates/gpui-react-runtime`: Native application loop for macOS AppKit (`NSApplication::run`), the N-API worker communication channel, and the default composition that builds the macOS arm64 `.node` binary. It builds both an `rlib` and a `cdylib`.
+- `crates/gpui-react-kit`: The standard kit: the five native controls (`Document`, `VirtualList`, `Container`, `Text`, `Input`), their `Style`, the painted geometry types, the visual examples, and `register_kit`. Opinionated by design: camelCase props, numbers as pixels, CSS colors, a curated event surface.
+- `crates/gpui-react-runtime`: Native application loop for macOS AppKit (`NSApplication::run`), the N-API worker communication channel, and the default composition (engine plus kit) that builds the macOS arm64 `.node` binary. It builds both an `rlib` and a `cdylib` and re-exports `gpui_react` and `gpui_react_kit`.
 
 ### JavaScript Packages (`packages/`)
 
-- `packages/core` (`@gpui-react/core`): React 19 reconciler for GPUI plus the typed React wrappers and refs for the standard controls (`Document`, `List`, `Container`, `Text`, `Input`). Provides `createRoot`, `nativeComponent`, transaction transport, and application entry helpers (`runApplication`, `attachApplication`).
-- `packages/runtime` (`@gpui-react/runtime`): Default runtime package that bundles the compiled native `.node` binary for macOS arm64.
+- `packages/core` (`@gpui-react/core`): React 19 reconciler for GPUI. Provides `createRoot`, `nativeComponent`, the JSON and binary wire, transaction transport, and application entry helpers (`runApplication`, `attachApplication`). It knows no control names.
+- `packages/kit` (`@gpui-react/kit`): Typed React wrappers, refs, and the `Style` type for the standard controls (`Document`, `List`, `Container`, `Text`, `Input`). Peer-depends on `@gpui-react/core`. The control contract is [`packages/kit/CONTROLS.md`](./packages/kit/CONTROLS.md).
+- `packages/runtime` (`@gpui-react/runtime`): Default runtime package that bundles the compiled native `.node` binary for macOS arm64, composed from the engine and the kit.
 
 ### Application Shapes
 
-A pure React application installs `@gpui-react/core` and `@gpui-react/runtime`
-and needs no Rust toolchain: the runtime package ships the compiled native
-library, and `host.ts` imports `bindings` from `@gpui-react/runtime`.
+A pure React application installs `@gpui-react/core`, `@gpui-react/kit`, and
+`@gpui-react/runtime` and needs no Rust toolchain: the runtime package ships
+the compiled native library, `host.ts` imports `bindings` from
+`@gpui-react/runtime`, and the worker imports the controls from
+`@gpui-react/kit`.
 
 An application with its own native components adds a `native/` crate that
-depends on `gpui-react` and `gpui-react-runtime`, registers its components in
-one `#[napi_derive::module_init]` through `register_components`, and builds a
-`cdylib`. Its `host.ts` points at that crate's own `.node` file. Built-in
-controls are always registered, so the composition only adds its own kinds.
+depends on `gpui-react-runtime` (and on `gpui-react-kit` when its components
+use the kit's `Style` or `Document`), registers its components in one
+`#[napi_derive::module_init]` through `register_components`, and builds a
+`cdylib`. Its `host.ts` points at that crate's own `.node` file. The runtime
+registers the kit before the composition's callbacks, so the composition only
+adds its own kinds.
 [`fixtures/counter`](./fixtures/counter/README.md) is the reference for this second shape.
+
+An engine-only application depends on `gpui-react` alone, builds its own
+`Registry`, and renders only the kinds it registers. Unless one of them is
+named `text`, `createRoot` needs `textKind` to name the kind that renders
+string children (see below); without it, the first string child fails the
+root.
 
 ## Standard Controls
 
-The standard control library provides five native components:
+The standard kit (`crates/gpui-react-kit`, `@gpui-react/kit`) provides five
+native components. `gpui_react_kit::register_kit(&mut registry)` declares the
+kit's `Style` as the session's shared value type and registers them as
+`document`, `list`, `container`, `text`, and `input`, in that order:
 
 1. **`Input`**: Native single-line and multiline text editor. Owns caret blinking, text selection, IME composition, drag autoscroll, and undo history. Supports replacement by expected revision.
 2. **`Container`**: Host-owned layout element (GPUI `div`). Supports flex direction, alignment, gap, padding, borders, background, scrolling (`x`, `y`, `both`), focus handles, and mouse isolation (`blockMouse`).
 3. **`Text`**: Host-owned text leaf. Connects text to the nearest parent `Document` for selection and search.
 4. **`List` (`VirtualList`)**: Variable-height virtualized list powered by GPUI `ListState`. Supports bounded React child windows over large logical item counts (such as 100,000 items), missing row requests (`needRows`), and scroll anchors.
 5. **`Document`**: Document text coordinator. Provides native selection across nodes, clipboard copy, search highlights, and painted geometry queries.
+
+Their full prop, event, command, and style contract is in
+[`packages/kit/CONTROLS.md`](./packages/kit/CONTROLS.md); the native side is
+documented in [`crates/gpui-react-kit/CONTROLS.md`](./crates/gpui-react-kit/CONTROLS.md).
+The kit crate re-exports `Container`, `Text`, `VirtualList`, `Document`,
+`Input`, `Style`, `SharedStyle` (an alias of `Shared<Style>`), `Color`,
+`Length`, `document_text`, `TextKey`, and `geometry`.
 
 ## Custom Component Traits
 
@@ -82,7 +104,7 @@ Every `Props` type derives `Deserialize` and `ComponentProps`:
 pub struct CounterProps {
     pub step: u32,
     pub label: Option<String>,
-    pub style: SharedStyle,
+    pub style: Shared<Style>,
 }
 ```
 
@@ -92,15 +114,37 @@ worker: field names, wire types, and which fields are required. Native is the
 source of truth; the worker receives the kind table from `NativeClient.schema()`
 at attach and encodes props by name from it. `Registry::verify_schemas()`
 checks every derived schema against serde's view of the struct, and the
-controls test suite runs it.
+kit test suite runs it.
 
 Wire types follow the Rust field type: `bool`; `i32`, `u32` (`usize` and
 `u64` travel as `u32`); `f32`, `f64`; `String` and `SharedString`;
-`SharedStyle` as an interned style id; anything else, including unit enums,
-`Vec`, and nested structs, as a self-describing value. A field is required
-unless the struct or the field has `#[serde(default)]` or the type is
-`Option`. `flatten`, tagged enums, and other `rename_all` casings are
+`Shared<T>` as an interned definition id; anything else, including unit
+enums, `Vec`, and nested structs, as a self-describing value. A field is
+required unless the struct or the field has `#[serde(default)]` or the type
+is `Option`. `flatten`, tagged enums, and other `rename_all` casings are
 rejected at compile time.
+
+### Shared Values
+
+`Shared<T>` is the engine's interned value: one `Arc<T>` per node, defined
+once on the wire and referenced by id afterwards. The engine does not know
+`T`. A session declares its shared definition type once, before any props
+reach the decoder, with `registry.shared::<T>()`; `T` implements
+`Deserialize` and `gpui_react::SharedDefinition`, which supplies the default
+`Arc<T>` a `Shared<T>` field falls back to. The decoder deserializes
+definitions into `Arc<T>` and resolves `Shared<T>` props by id; a `Shared<T>`
+field also accepts an inline `T`. One shared type per session: declaring a
+second fails, and a definition arriving before any declaration fails the
+transaction. The kit declares `Style` and spells its fields `Shared<Style>`
+(`SharedStyle` is that alias).
+
+The wire keeps its spelling: the JSON operations are `style` and
+`dropStyle`, the binary tags are unchanged, the schema wire type is
+`WireType::Style` (`"style"` in the JSON schema), and the native runtime
+version stays 2. Renaming them to `shared` would touch every encoder, the
+wire dumps, and the runtime version check for no behavior change; the names
+describe the wire's one use today, and the type they carry is decided by the
+registry.
 
 Transactions cross as a binary payload written during React's commit: kind
 indices, ids, a presence mask, then the declared fields in schema order, with no
@@ -113,7 +157,12 @@ custom field deserializers apply unchanged.
 
 `createRoot(transport, options)` accepts `schema` (the kind table),
 `wire: "json" | "binary"` (default `"json"`; `attachApplication` uses
-`"binary"`), and `wireChecks` (number checks, on by default). `Transport.send`
+`"binary"`), `wireChecks` (number checks, on by default), and `textKind`.
+`textKind` (default `"text"`) names the native kind that renders a string or
+number child, which the reconciler creates as `{ text }` props. With a
+schema present and no such kind, the first string child fails the root with
+an error that names the option; the kit's `text` control matches the default.
+`Transport.send`
 receives a string on the JSON wire and a `Uint8Array` on the binary wire that
 is valid until the send settles. `decodeWire(bytes, schema)` rebuilds operation
 objects for tests and tools. The native runtime version is 2.
@@ -162,17 +211,21 @@ Run the visual examples. Windows open inactive and stay in the background:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run -p gpui-react --example document_visual
+  cargo run -p gpui-react-kit --example document_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run -p gpui-react --example container_visual
+  cargo run -p gpui-react-kit --example container_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run -p gpui-react --example list_visual
+  cargo run -p gpui-react-kit --example list_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run -p gpui-react --example geometry_visual
+  cargo run -p gpui-react-kit --example input_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run -p gpui-react --example selection_toolbar_visual
+  cargo run -p gpui-react-kit --example geometry_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
-  cargo run -p gpui-react --example deferred_document_visual
+  cargo run -p gpui-react-kit --example selection_toolbar_visual
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
+  cargo run -p gpui-react-kit --example deferred_document_visual
+CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
+  cargo run -p gpui-react-kit --example modal_visual
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
   cargo run -p gpui-react-texture-example --example visual
 ```
@@ -249,12 +302,14 @@ Count-update measurements and height-index update analysis:
 .
 ├── Cargo.toml                   # Root Cargo workspace
 ├── crates/
-│   ├── gpui-react/              # Core Host, node tables, protocol, traits, controls
+│   ├── gpui-react/              # Engine: Host, node tables, decoder, registry, wire, traits
 │   ├── gpui-react-macros/       # ComponentProps derive
-│   └── gpui-react-runtime/      # macOS AppKit loop, N-API transport, default composition
+│   ├── gpui-react-kit/          # Standard controls, Style, geometry, examples, CONTROLS.md
+│   └── gpui-react-runtime/      # macOS AppKit loop, N-API transport, engine + kit composition
 ├── packages/
-│   ├── core/                    # React reconciler and control wrappers
-│   └── runtime/                 # Bundled macOS arm64 native runtime
+│   ├── core/                    # React reconciler, wire, nativeComponent, application helpers
+│   ├── kit/                     # React wrappers and types for the standard controls
+│   └── runtime/                 # Bundled macOS arm64 native runtime (engine + kit)
 ├── fixtures/
 │   ├── counter/                 # E2E counter fixture and interactive demo
 │   ├── gpu-component/           # Metal texture integration fixture

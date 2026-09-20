@@ -1,7 +1,7 @@
 # External GPU component
 
 This fixture is an ordinary GPUI `TextureView` with a small React binding. It
-depends on `gpui-react` and the standard controls. The application composition
+depends on `gpui-react` and the `gpui-react-kit` standard controls. The application composition
 registers it in the same runtime as its other components.
 
 The producer obtains the window's Metal device and command queue. It creates

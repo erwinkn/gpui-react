@@ -52,7 +52,7 @@ The test keeps windows in the background and closes its own processes. It checks
 
 The final state reports a native render count, but occluded windows need not draw
 on every update. Native timer progress does not measure display FPS or
-input-to-photon latency. The controls crate has a separate GPU-backed keyboard,
+input-to-photon latency. The kit crate has a separate GPU-backed keyboard,
 IME, accessibility, and nested-scroll test. The native controls also have list, shared-scroll, and document scenarios.
 External editor examples remain a later validation stage.
 

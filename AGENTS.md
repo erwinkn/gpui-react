@@ -2,8 +2,6 @@
 
 **Read [README.md](./README.md) first** to understand the architecture, crates, packages, controls, and benchmarks.
 
-Unless you are **remorses** or **monotykamary**, do not open a pull request. Open an issue.
-
 ## README is the public API contract
 
 Document every user-facing feature, element, prop, event, renderer option,
@@ -46,7 +44,7 @@ Prefer the smallest translation. Keep the system simple with few moving parts.
 - The UI thread parses no JSON.
 - A worker-side `Decoder` parses transaction text into strongly typed operations.
 - Operations map component names to registry indices without intermediate value allocations.
-- Shared styles are sent once by id. Style operations never cross to the UI thread.
+- Shared values (`Shared<T>`) are sent once by id. Definition operations never cross to the UI thread. The engine does not know `T`; the registry declares the session's shared type, and the kit declares `Style`.
 
 ### Native State Ownership
 
@@ -96,7 +94,7 @@ CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo <command>
 
 #### Rust Workspace
 
-Test the whole workspace, including the built-in controls and the default runtime:
+Test the whole workspace, including the engine, the kit's standard controls, and the default runtime:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 \
