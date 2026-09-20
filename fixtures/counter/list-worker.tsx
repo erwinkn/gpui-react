@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { createRef, useLayoutEffect } from "react"
 import { attachApplication } from "@gpui-react/core/application"
-import { Container, List, Text, type ListRef, type TextRef, type ContainerRef } from "@gpui-react/core"
+import { Container, List, Text, type ListRef, type TextRef, type ContainerRef } from "@gpui-react/kit"
 
 const root = attachApplication(require("./counter.node"))
 const list = createRef<ListRef>()

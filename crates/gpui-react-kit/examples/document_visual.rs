@@ -2,7 +2,7 @@
 mod support;
 use gpui::{prelude::*, *};
 use gpui_react::{Component, ReactView};
-use gpui_react::document_text;
+use gpui_react_kit::document_text;
 use serde_json::{Value, json};
 use support::*;
 

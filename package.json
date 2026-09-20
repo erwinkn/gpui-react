@@ -10,8 +10,8 @@
     "scripts"
   ],
   "scripts": {
-    "build": "bun run --cwd packages/core build",
-    "test": "bun run --cwd packages/core test",
+    "build": "bun run --cwd packages/core build && bun run --cwd packages/kit build",
+    "test": "bun run --cwd packages/core test && bun run --cwd packages/kit test",
     "verify": "CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo test --workspace && CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo clippy --workspace --all-targets --all-features -- -D warnings && bun run build && bun run test && CARGO_TARGET_DIR=/tmp/gpui-react-target CARGO_BUILD_JOBS=3 cargo build -p gpui-react-counter-example --release && cp /tmp/gpui-react-target/release/libgpui_react_counter_example.dylib fixtures/counter/counter.node && bun fixtures/counter/test.ts"
   },
   "dependencies": {

@@ -7,27 +7,27 @@
 //! bad value is a request error, not a transaction failure.
 use crate::{
     registry::{Kind, Op, Payload, Prepared, Registry},
-    style::{STYLES, Style},
+    shared::{self, Erased},
     wire,
 };
 use anyhow::Result;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::value::RawValue;
-use std::{fmt, sync::Arc};
+use std::fmt;
 
-/// Decodes one session's transactions. It owns the session's style
+/// Decodes one session's transactions. It owns the session's shared
 /// definitions, which are declared once on the wire and referenced by id, so
-/// typed props already hold their shared style when they reach the UI thread.
+/// typed props already hold their shared value when they reach the UI thread.
 pub struct Decoder {
     registry: Registry,
-    styles: Vec<Option<Arc<Style>>>,
+    shared: Vec<Option<Erased>>,
 }
 
 impl Decoder {
     pub fn new(registry: Registry) -> Self {
         Self {
             registry,
-            styles: Vec::new(),
+            shared: Vec::new(),
         }
     }
     pub fn registry(&self) -> &Registry {
@@ -35,7 +35,8 @@ impl Decoder {
     }
     /// Decode transaction text into typed operations.
     pub fn parse(&mut self, json: &str) -> Result<Prepared> {
-        self.with_styles(|registry| {
+        let registry = &self.registry;
+        shared::with_table(&mut self.shared, || {
             let mut deserializer = serde_json::Deserializer::from_str(json);
             let prepared = TransactionSeed(registry).deserialize(&mut deserializer)?;
             deserializer.end()?;
@@ -44,7 +45,8 @@ impl Decoder {
     }
     /// Decode a binary transaction into typed operations. See `wire`.
     pub fn parse_binary(&mut self, bytes: &[u8]) -> Result<Prepared> {
-        self.with_styles(|registry| {
+        let registry = &self.registry;
+        shared::with_table(&mut self.shared, || {
             let mut reader = wire::Reader::new(bytes)?;
             let prepared = read_transaction(registry, &mut reader)?;
             if !reader.finished() {
@@ -53,41 +55,9 @@ impl Decoder {
             Ok(prepared)
         })
     }
-    /// Runs a decode with this session's style definitions installed.
-    fn with_styles<R>(&mut self, decode: impl FnOnce(&Registry) -> R) -> R {
-        struct Installed<'a>(&'a mut Vec<Option<Arc<Style>>>);
-        impl Drop for Installed<'_> {
-            fn drop(&mut self) {
-                STYLES.with(|cell| std::mem::swap(&mut *cell.borrow_mut(), self.0));
-            }
-        }
-        STYLES.with(|cell| std::mem::swap(&mut *cell.borrow_mut(), &mut self.styles));
-        let _installed = Installed(&mut self.styles);
-        decode(&self.registry)
-    }
-}
-
-/// Records or drops a style definition in the installed session table.
-fn install_style(id: u32, definition: Option<Arc<Style>>) -> Result<(), &'static str> {
-    STYLES.with(|styles| {
-        let mut styles = styles.borrow_mut();
-        let slot = id as usize;
-        if slot >= styles.len() {
-            if definition.is_none() {
-                return Ok(());
-            }
-            if slot > styles.len() + 4096 {
-                return Err("style id skips too far");
-            }
-            styles.resize(slot + 1, None);
-        }
-        styles[slot] = definition;
-        Ok(())
-    })
 }
 
 fn read_transaction(registry: &Registry, reader: &mut wire::Reader<'_>) -> Result<Prepared> {
-    use serde::Deserialize as _;
     if reader.u8()? != 1 {
         anyhow::bail!("unsupported protocol version");
     }
@@ -160,12 +130,12 @@ fn read_transaction(registry: &Registry, reader: &mut wire::Reader<'_>) -> Resul
             }
             9 => {
                 let id = reader.u32()?;
-                let style = Style::deserialize(&mut *reader)?;
-                install_style(id, Some(Arc::new(style))).map_err(anyhow::Error::msg)?;
+                let definition = (registry.shared_codec()?.wire)(reader)?;
+                shared::install(id, Some(definition)).map_err(anyhow::Error::msg)?;
                 continue;
             }
             10 => {
-                install_style(reader.u32()?, None).map_err(anyhow::Error::msg)?;
+                shared::install(reader.u32()?, None).map_err(anyhow::Error::msg)?;
                 continue;
             }
             tag => anyhow::bail!("unknown wire operation tag {tag}"),
@@ -298,8 +268,8 @@ impl<'de> Visitor<'de> for OperationSeed<'_> {
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
         expecting(f, "a native operation object")
     }
-    /// Style definitions are consumed here and produce no operation: later
-    /// props in the same session resolve their style id to the shared value.
+    /// Shared definitions are consumed here and produce no operation: later
+    /// props in the same session resolve their id to the shared value.
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Option<Op>, A::Error> {
         let registry = self.0;
         let mut op = None;
@@ -313,7 +283,7 @@ impl<'de> Visitor<'de> for OperationSeed<'_> {
         let mut hidden = None;
         let mut request = None;
         let mut value: Option<&'de RawValue> = None;
-        let mut style: Option<Style> = None;
+        let mut style: Option<&'de RawValue> = None;
         while let Some(field) = map.next_key_seed(Name(OPERATION_FIELDS))? {
             match field {
                 0 => op = Some(map.next_value_seed(Name(OPS))?),
@@ -348,11 +318,14 @@ impl<'de> Visitor<'de> for OperationSeed<'_> {
         if op >= 8 {
             let id: u32 = need(id, "id")?;
             let definition = if op == 8 {
-                Some(Arc::new(need(style, "style")?))
+                let codec = registry.shared_codec().map_err(de::Error::custom)?;
+                Some((codec.json)(need(style, "style")?).map_err(|error| {
+                    de::Error::custom(format!("{error:#}"))
+                })?)
             } else {
                 None
             };
-            install_style(id, definition).map_err(de::Error::custom)?;
+            shared::install(id, definition).map_err(de::Error::custom)?;
             return Ok(None);
         }
         let call = |command: bool| -> Result<Op, A::Error> {
@@ -431,13 +404,25 @@ impl Visitor<'_> for ComponentSeed<'_> {
 mod wire_equivalence {
     use super::Decoder;
     use crate::{
-        ElementContext, ReactElement, RenderContext,
+        ElementContext, ReactElement, RenderContext, Shared, SharedDefinition,
         registry::{HostElement, Op, Payload, Registry},
-        style::SharedStyle,
     };
     use gpui::{AnyElement, IntoElement as _, ParentElement as _};
     use serde::Deserialize;
     use serde_json::Value;
+    use std::sync::{Arc, LazyLock};
+
+    /// The kit's style as the engine sees it: any map, shared by id.
+    #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+    #[serde(transparent)]
+    struct TestStyle(Value);
+    impl SharedDefinition for TestStyle {
+        fn default_shared() -> Arc<Self> {
+            static DEFAULT: LazyLock<Arc<TestStyle>> = LazyLock::new(Arc::default);
+            DEFAULT.clone()
+        }
+    }
+    type SharedStyle = Shared<TestStyle>;
 
     macro_rules! mirror {
         ($name:ident { $($field:ident: $ty:ty),* $(,)? }) => {
@@ -463,6 +448,7 @@ mod wire_equivalence {
 
     fn decoder() -> Decoder {
         let mut registry = Registry::default();
+        registry.shared::<TestStyle>().unwrap();
         registry.register(HostElement::<Document>::new("document").children()).unwrap();
         registry.register(HostElement::<List>::new("list").children()).unwrap();
         registry.register(HostElement::<Container>::new("container").children()).unwrap();
@@ -510,10 +496,11 @@ mod wire_equivalence {
                 assert_eq!(describe(x), describe(y));
             }
             assert!(a.operations.iter().any(|op| matches!(op, Op::Create { kind: 3, .. })));
-            assert_eq!(from_json.styles.len(), from_binary.styles.len());
-            assert!(from_json.styles.len() >= 3);
-            for (x, y) in from_json.styles.iter().zip(&from_binary.styles) {
-                assert_eq!(x.as_deref(), y.as_deref());
+            assert_eq!(from_json.shared.len(), from_binary.shared.len());
+            assert!(from_json.shared.len() >= 3);
+            for (x, y) in from_json.shared.iter().zip(&from_binary.shared) {
+                let style = |slot: &Option<super::Erased>| slot.as_ref().map(|s| s.downcast_ref::<TestStyle>().unwrap().clone());
+                assert_eq!(style(x), style(y));
             }
         }
     }

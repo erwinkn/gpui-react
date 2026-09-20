@@ -1,6 +1,6 @@
 use gpui::{AppContext, TestAppContext, WindowHandle, px};
 use gpui_react::{Host, Registry};
-use gpui_react::VirtualList;
+use gpui_react_kit::VirtualList;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ fn row(id: u64) -> [Value; 2] {
 fn host(cx: &mut TestAppContext) -> WindowHandle<Host> {
     cx.add_window(|_, _| {
         let mut registry = Registry::default();
-        gpui_react::register_builtins(&mut registry).unwrap();
+        gpui_react_kit::register_kit(&mut registry).unwrap();
         Host::new(registry, Arc::new(|_| {}))
     })
 }

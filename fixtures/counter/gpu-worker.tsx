@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { createRef } from "react"
 import { attachApplication } from "@gpui-react/core/application"
-import { Document, type DocumentRef } from "@gpui-react/core"
+import { Document, type DocumentRef } from "@gpui-react/kit"
 import { Texture, type TextureRef } from "@gpui-react/gpu-example"
 
 const bindings = require("./counter.node")

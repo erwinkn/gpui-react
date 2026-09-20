@@ -20,6 +20,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod signals;
 pub use gpui_react;
+pub use gpui_react_kit;
 #[cfg(target_os = "macos")]
 pub use macos::*;
 
@@ -46,9 +47,9 @@ pub fn register_components(register: Register) {
 
 fn registry() -> anyhow::Result<Registry> {
     let mut registry = Registry::default();
-    // The built-in controls are always present; composition registrations add
-    // their own components on top.
-    gpui_react::register_builtins(&mut registry)?;
+    // The standard kit is always present; composition registrations add their
+    // own components on top.
+    gpui_react_kit::register_kit(&mut registry)?;
     for register in COMPONENTS.lock().unwrap().iter() {
         register(&mut registry)?;
     }

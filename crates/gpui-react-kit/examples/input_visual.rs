@@ -1,6 +1,6 @@
 //! GPU-backed checks. Run on the main OS thread; all windows stay off screen.
 use gpui::{prelude::*, *};
-use gpui_react::{Input, InputCommand, InputProps};
+use gpui_react_kit::{Input, InputCommand, InputProps};
 use std::{cell::Cell, rc::Rc};
 
 struct Panel {

@@ -32,10 +32,12 @@
     "build": "bun ../../scripts/build-runtime.ts"
   },
   "peerDependencies": {
-    "@gpui-react/core": "^0.1.0"
+    "@gpui-react/core": "^0.1.0",
+    "@gpui-react/kit": "^0.1.0"
   },
   "devDependencies": {
-    "@gpui-react/core": "workspace:*"
+    "@gpui-react/core": "workspace:*",
+    "@gpui-react/kit": "workspace:*"
   },
   "license": "Apache-2.0"
 }

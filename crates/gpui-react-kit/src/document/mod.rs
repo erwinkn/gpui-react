@@ -2,9 +2,9 @@
 mod geometry;
 mod search;
 mod selection;
-use crate::{Color, SharedStyle, geometry::Rect};
+use crate::{Color, Style, geometry::Rect};
 use gpui::{prelude::*, *};
-use gpui_react::{Children, ReactChildren, ReactCommands, ReactEvents, ReactQueries, ReactView};
+use gpui_react::{Children, ReactChildren, ReactCommands, ReactEvents, ReactQueries, ReactView, Shared};
 pub use search::{Query as SearchQuery, Search};
 use selection::{RegisteredText, SelectionState};
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,7 @@ use std::{fmt, ops::Range, rc::Rc, sync::Arc, time::Duration};
 #[derive(Default, Deserialize, gpui_react::ComponentProps)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct DocumentProps {
-    pub style: SharedStyle,
+    pub style: Shared<Style>,
     pub search: Option<Search>,
     pub selection_color: Option<Color>,
 }
@@ -1159,7 +1159,7 @@ mod tests {
     fn host(cx: &mut TestAppContext, operations: Value) -> (WindowHandle<Host>, Entity<Document>) {
         let window = cx.add_window(|_, _| {
             let mut registry = Registry::default();
-            crate::register_builtins(&mut registry).unwrap();
+            crate::register_kit(&mut registry).unwrap();
             Host::new(registry, Arc::new(|_| {}))
         });
         let document = window

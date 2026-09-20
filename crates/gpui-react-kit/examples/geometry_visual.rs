@@ -2,7 +2,7 @@
 mod support;
 use gpui::{prelude::*, *};
 use gpui_react::{Component, FrameInfo, ReactEvents, ReactQueries, ReactView};
-use gpui_react::{
+use gpui_react_kit::{
     document_text,
     geometry::{Offset, Rect},
 };

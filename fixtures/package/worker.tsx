@@ -7,7 +7,7 @@ import {
   Container, Document, Input, List, Text,
   type ContainerRef, type DocumentRef, type DocumentEvent,
   type InputRef, type InputEvent, type ListRef, type TextRef,
-} from "@gpui-react/core"
+} from "@gpui-react/kit"
 
 const root = attachApplication(bindings)
 if (process.env.BRIDGE_PACKAGE_MODE === "unknown") {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { createRef } from "react"
 import { attachApplication } from "@gpui-react/core/application"
-import { Document, Text, type DocumentRef, type DocumentEvent } from "@gpui-react/core"
+import { Document, Text, type DocumentRef, type DocumentEvent } from "@gpui-react/kit"
 
 const bindings = require("./counter.node")
 const root = attachApplication(bindings)

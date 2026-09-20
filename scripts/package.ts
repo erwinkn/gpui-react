@@ -12,7 +12,7 @@ if (!version || !/^\d+\.\d+\.\d+-[a-z0-9.]+$/.test(version)) throw Error("Pass a
 const output = resolve(process.argv[3] ?? join(root, "dist/bridge"))
 const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim() !== ""
 if (dirty && !process.argv.includes("--allow-dirty")) throw Error("Commit the source before packing; --allow-dirty is for local development tests only")
-for (const args of [["scripts/build-runtime.ts"], ["run", "--cwd", "packages/core", "build"]]) {
+for (const args of [["scripts/build-runtime.ts"], ["run", "--cwd", "packages/core", "build"], ["run", "--cwd", "packages/kit", "build"]]) {
   const child = Bun.spawn(["bun", ...args], { cwd: root, stdout: "inherit", stderr: "inherit" })
   if (await child.exited !== 0) throw Error(`Build failed: ${args.join(" ")}`)
 }
@@ -26,7 +26,7 @@ const sha256 = (path: string) => createHash("sha256").update(readFileSync(path))
 mkdirSync(output, { recursive: true })
 try {
   const packages = []
-  for (const name of ["core", "runtime"]) {
+  for (const name of ["core", "kit", "runtime"]) {
     const source = join(root, "packages", name)
     const destination = join(stage, name)
     mkdirSync(destination)
@@ -35,7 +35,7 @@ try {
     manifest.version = version
     manifest.private = true
     manifest.repository = { type: "git", url: "https://github.com/erwinkn/gpui-react" }
-    if (manifest.peerDependencies?.["@gpui-react/core"]) manifest.peerDependencies["@gpui-react/core"] = version
+    for (const peer of ["@gpui-react/core", "@gpui-react/kit"]) if (manifest.peerDependencies?.[peer]) manifest.peerDependencies[peer] = version
     delete manifest.devDependencies
     delete manifest.scripts
     writeFileSync(join(destination, "package.json"), JSON.stringify(manifest, null, 2) + "\n")

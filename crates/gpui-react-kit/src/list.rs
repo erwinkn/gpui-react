@@ -1,6 +1,6 @@
-use crate::{SharedStyle, geometry::Painted};
+use crate::{Style, geometry::Painted};
 use gpui::{prelude::*, *};
-use gpui_react::{Children, ReactChildren, ReactCommands, ReactEvents, ReactQueries, ReactView};
+use gpui_react::{Children, ReactChildren, ReactCommands, ReactEvents, ReactQueries, ReactView, Shared};
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
@@ -14,7 +14,7 @@ pub enum Alignment {
 #[derive(Debug, Default, Deserialize, gpui_react::ComponentProps)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListProps {
-    pub style: SharedStyle,
+    pub style: Shared<Style>,
     /// None means that all logical rows are supplied as children.
     pub item_count: Option<usize>,
     pub window_start: usize,

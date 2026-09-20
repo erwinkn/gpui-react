@@ -1,6 +1,6 @@
-use crate::{SharedStyle, geometry::Painted};
+use crate::{SharedStyle, Style, geometry::Painted};
 use gpui::{prelude::*, *};
-use gpui_react::{ElementContext, ElementQueries, ReactElement, RenderContext};
+use gpui_react::{ElementContext, ElementQueries, ReactElement, RenderContext, Shared};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct TextProps {
     /// Decoded straight into GPUI's string type: one copy from the wire.
     pub text: SharedString,
-    pub style: SharedStyle,
+    pub style: Shared<Style>,
     pub text_key: Option<SharedString>,
     pub selectable: bool,
     pub searchable: bool,

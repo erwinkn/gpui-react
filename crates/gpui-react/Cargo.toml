@@ -3,7 +3,7 @@ name = "gpui-react"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "Small asynchronous React bindings for ordinary GPUI views, with the built-in controls"
+description = "Small asynchronous React bindings for ordinary GPUI views: the engine, with no built-in controls"
 
 [dependencies]
 gpui = { workspace = true }
@@ -12,11 +12,6 @@ serde = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
 anyhow = { workspace = true }
 rustc-hash = { workspace = true }
-csscolorparser = { workspace = true }
-unicode-segmentation = "1"
-web-time = "1"
-regex = "1"
-smallvec = "1"
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

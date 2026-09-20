@@ -1,7 +1,7 @@
 import { Fragment, createRef, useEffect, useLayoutEffect, useState } from "react"
 import { nativeComponent, type NativeRef } from "@gpui-react/core"
 import { attachApplication } from "@gpui-react/core/application"
-import { Container, Document, Input, List, Text, type InputEvent } from "@gpui-react/core"
+import { Container, Document, Input, List, Text, type InputEvent } from "@gpui-react/kit"
 
 const root = attachApplication(require("./counter.node"))
 const Counter = nativeComponent<{ step: number }, never, "start" | "stop", null, { count: number }>("counter")

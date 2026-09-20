@@ -12,7 +12,7 @@ const published = process.argv.includes("--published")
 const manifest = JSON.parse(readFileSync(join(artifacts, "bridge-manifest.json"), "utf8"))
 if (published) assert.equal(manifest.sourceDirty, false, "Published artifacts must use committed source")
 const hash = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex")
-assert.deepEqual(manifest.packages.map((item: { name: string }) => item.name).sort(), ["@gpui-react/core", "@gpui-react/runtime"])
+assert.deepEqual(manifest.packages.map((item: { name: string }) => item.name).sort(), ["@gpui-react/core", "@gpui-react/kit", "@gpui-react/runtime"])
 for (const item of manifest.packages) assert.equal(hash(join(artifacts, item.filename)), item.sha256)
 
 const temporary = mkdtempSync(join(tmpdir(), "gpui-react-install-"))

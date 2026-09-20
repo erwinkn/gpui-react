@@ -186,4 +186,24 @@ describe("Native component schema", () => {
     root.dispose()
     expect(createRoot(new RecordingTransport()).kinds).toBeNull()
   })
+  it("renders string children with the textKind root option and names it when the schema lacks the kind", async () => {
+    const capabilities = { events: false, commands: false, queries: false, children: false, view: false }
+    const schema = [{ name: "label", capabilities, fields: [{ name: "text", type: "str" as const, required: false }] }]
+    const transport = new RecordingTransport()
+    const root = createRoot(transport, { schema, textKind: "label" })
+    root.renderSync(h("label", null, "hello"))
+    await root.flush()
+    expect(transport.transactions[0].operations.flatMap(op => op.op === "create" ? [[op.component, op.props]] : [])).toEqual([["label", {}], ["label", { text: "hello" }]])
+    await root.unmount()
+
+    const errors: Error[] = []
+    const failing = createRoot(new RecordingTransport(), { schema, onError: error => errors.push(error) })
+    expect(failing.textKind).toBe("text")
+    failing.renderSync(h("label", null, "hello"))
+    await expect(failing.flush()).rejects.toThrow(/native kind "text".*textKind root option/)
+    const plain = createRoot(new RecordingTransport())
+    plain.renderSync(h("box", null, "hello"))
+    await plain.flush()
+    await plain.unmount()
+  })
 })

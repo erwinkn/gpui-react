@@ -2,6 +2,7 @@
 //! owns a table of its kind's rows on the UI thread: either host-owned element
 //! values or GPUI entities.
 use crate::{
+    shared::{Erased, SharedDefinition},
     wire, Children, ElementCommands, ElementContext, ElementQueries, Host, ReactChildren,
     ReactCommands, ReactElement, ReactEvents, ReactQueries, ReactView, RenderContext,
 };
@@ -597,13 +598,38 @@ fn kind_name(kind: Kind) -> &'static str {
 
 // ---- registry --------------------------------------------------------------
 
+/// Decodes the session's shared definitions from either wire.
+#[derive(Clone, Copy)]
+pub(crate) struct SharedCodec {
+    pub(crate) json: fn(&RawValue) -> Result<Erased>,
+    pub(crate) wire: fn(&mut wire::Reader<'_>) -> Result<Erased>,
+}
+
 #[derive(Default)]
 pub struct Registry {
     names: HashMap<String, u16>,
     bindings: Vec<Arc<dyn Binding>>,
+    shared: Option<SharedCodec>,
 }
 
 impl Registry {
+    /// Declares the definition type behind the wire's `style` operations and
+    /// every `Shared<T>` prop. A session has one; a kit declares it before
+    /// registering the components that use it.
+    pub fn shared<T: SharedDefinition>(&mut self) -> Result<()> {
+        ensure!(self.shared.is_none(), "the shared definition type is already declared");
+        self.shared = Some(SharedCodec {
+            json: |raw| Ok(Arc::new(serde_json::from_str::<T>(raw.get())?)),
+            wire: |reader| Ok(Arc::new(T::deserialize(reader)?)),
+        });
+        Ok(())
+    }
+
+    pub(crate) fn shared_codec(&self) -> Result<SharedCodec> {
+        self.shared
+            .ok_or_else(|| anyhow!("no shared definition type is declared; call Registry::shared"))
+    }
+
     pub fn register(&mut self, binding: impl Binding) -> Result<()> {
         let name = binding.name();
         if name.is_empty()
